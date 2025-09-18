@@ -63,7 +63,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileUpload, disabled }
           <p className="mb-2 text-sm text-slate-400">
             <span className="font-semibold text-cyan-400">Upload Power Module</span> or drag & drop
           </p>
-          <p className="text-xs text-slate-500">Python, JSON, JS/TS, etc. (Max 10MB)</p>
+          <p className="text-xs text-slate-500">Python, JSON, JS/TS, etc. (Max 50MB)</p>
         </div>
         <input id="dropzone-file" type="file" className="hidden" onChange={handleFileChange} disabled={disabled} />
       </label>

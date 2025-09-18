@@ -1,4 +1,4 @@
-import { GoogleGenAI, Chat } from "@google/genai";
+import { GoogleGenAI, Chat, Content } from "@google/genai";
 
 const FUX_SYSTEM_PROMPT = `
 name: FuX
@@ -45,6 +45,11 @@ output_style:
   - No filler. No hesitation.
 `;
 
+type Message = {
+  role: 'user' | 'fux';
+  content: string;
+};
+
 let ai: GoogleGenAI;
 
 const getAI = () => {
@@ -56,6 +61,27 @@ const getAI = () => {
     }
     return ai;
 }
+
+const formatHistoryForGemini = (messages: Message[]): Content[] => {
+  return messages.map(msg => ({
+      role: msg.role === 'fux' ? 'model' : 'user',
+      parts: [{ text: msg.content }]
+  }));
+}
+
+export const createChatWithHistory = (history: Message[]): Chat => {
+  const genAI = getAI();
+  const formattedHistory = formatHistoryForGemini(history);
+  const chat = genAI.chats.create({
+    model: 'gemini-2.5-flash',
+    config: {
+      systemInstruction: FUX_SYSTEM_PROMPT,
+      temperature: 0.7,
+    },
+    history: formattedHistory,
+  });
+  return chat;
+};
 
 export const startChat = async (fileContent: string, fileName: string): Promise<{ chat: Chat; initialResponse: string }> => {
   const genAI = getAI();

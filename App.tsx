@@ -1,8 +1,8 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import type { Chat } from '@google/genai';
 import { FileUpload } from './components/FileUpload';
 import { Loader } from './components/Loader';
-import { startChat, continueChat } from './services/geminiService';
+import { startChat, continueChat, createChatWithHistory } from './services/geminiService';
 import { Header } from './components/Header';
 import { ErrorDisplay } from './components/ErrorDisplay';
 import { ChatInterface } from './components/ChatInterface';
@@ -12,24 +12,62 @@ type Message = {
   content: string;
 };
 
+const CHAT_HISTORY_KEY = 'fux-chat-history';
+
 const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [chatSession, setChatSession] = useState<Chat | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+
+  const [messages, setMessages] = useState<Message[]>(() => {
+    try {
+      const saved = localStorage.getItem(CHAT_HISTORY_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.error("Could not load chat history from localStorage", e);
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      if (messages.length > 0) {
+        localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(messages));
+      } else {
+        localStorage.removeItem(CHAT_HISTORY_KEY);
+      }
+    } catch (e) {
+      console.error("Could not save chat history to localStorage", e);
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    if (messages.length > 0 && !chatSession) {
+      try {
+        const session = createChatWithHistory(messages);
+        setChatSession(session);
+      } catch (e) {
+        console.error("Failed to recreate chat session from history.", e);
+        setError(e instanceof Error ? e.message : "Failed to restore session. Please start over by uploading a module.");
+        setMessages([]); // Clear corrupted or unusable history
+      }
+    }
+    // This effect should only run on initial mount to restore a session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleFileUpload = useCallback(async (file: File) => {
     if (isLoading) return;
 
     setIsLoading(true);
     setError(null);
-    setMessages([]);
+    setMessages([]); // This clears state and triggers useEffect to clear localStorage
     setChatSession(null);
     setFileName(file.name);
 
-    if (file.size > 10 * 1024 * 1024) { // 10MB limit
-      setError("File size exceeds 10MB limit. Please upload a smaller module.");
+    if (file.size > 50 * 1024 * 1024) { // 50MB limit
+      setError("File size exceeds 50MB limit. Please upload a smaller module.");
       setIsLoading(false);
       return;
     }
