@@ -1,0 +1,5 @@
+{
+  "name": "FuX: Power Module Interface",
+  "description": "An interface to upload and absorb Power Modules into the FuX System-Integrated Sentinel. Upload a code file to see FuX analyze its functionality and integrate it as a new power.",
+  "requestFramePermissions": []
+}
