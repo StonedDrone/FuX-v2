@@ -107,11 +107,21 @@ export const analyzeCode = async (prompt: string, history: Message[]): Promise<s
     // According to guidelines, use 'gemini-2.5-flash'.
     const model = 'gemini-2.5-flash';
     
+    const historyForModel = getChatHistory(history);
+    const contents = [
+      ...historyForModel,
+      { role: 'user', parts: [{ text: prompt }] }
+    ];
+
+    const systemInstruction = "You are FuX, a Fusion Experience AI. Your persona is professional, slightly futuristic, and highly competent. Analyze the user's request and provide a concise, expert-level response.";
+
     // According to guidelines, do not define the model first. Use ai.models.generateContent.
     const response: GenerateContentResponse = await ai.models.generateContent({
       model: model,
-      contents: `User prompt: ${prompt}\n\nAnalyze the user's request and provide a concise, expert-level response. You are FuX, a Fusion Experience AI. Your persona is professional, slightly futuristic, and highly competent.`,
-      // config can be added here if needed, e.g. systemInstruction
+      contents: contents,
+      config: {
+        systemInstruction: systemInstruction,
+      },
     });
 
     // According to guidelines, access text output via response.text
