@@ -5,7 +5,7 @@ import { PluginRegistry } from './components/PluginRegistry';
 import { Hud } from './components/Hud';
 import { ConnectionsPanel } from './components/ConnectionsPanel';
 import { ErrorDisplay } from './components/ErrorDisplay';
-import { analyzeCode, executeCode, generateImage, googleSearch } from './services/geminiService';
+import { analyzeCode, executeCode, generateImage, googleSearch, createExecutionPlan, AgentStep } from './services/geminiService';
 import { GoogleGenAI, LiveServerMessage, Modality, Blob } from '@google/genai';
 import { encode, decode, decodeAudioData } from './utils/audioUtils';
 import { vmixService } from './services/vmixService';
@@ -18,11 +18,14 @@ interface GroundingChunk {
   };
 }
 
+export type { AgentStep };
+
 export interface Message {
   role: 'fux' | 'user' | 'system_core';
   content: string;
   imageUrl?: string;
   sources?: GroundingChunk[];
+  agentPlan?: AgentStep[];
 }
 
 interface Plugin {
@@ -255,7 +258,7 @@ const App: React.FC = () => {
     
     switch (cmd) {
       case '/help':
-        addMessage({ role: 'fux', content: 'Available Commands:\n/help - Show this message\n/ingest <source> - Ingest a new Power Module\n/powers - List ingested Power Modules\n/use <module> [args] - Use a Power Module (e.g. vmix, blender)\n/generate image <prompt> - Create an image from a text description\n/search <query> - Get a web-grounded answer to a query' });
+        addMessage({ role: 'fux', content: 'Available Commands:\n/help - Show this message\n/agent <goal> - Engage agent mode for a complex task\n/ingest <source> - Ingest a new Power Module\n/powers - List ingested Power Modules\n/use <module> [args] - Use a Power Module (e.g. vmix, blender)\n/generate image <prompt> - Create an image from a text description\n/search <query> - Get a web-grounded answer to a query' });
         break;
       case '/ingest':
         // Mock ingestion
@@ -368,6 +371,58 @@ const App: React.FC = () => {
             });
         } catch (e: any) {
             addMessage({ role: 'system_core', content: `Search failed: ${e.message}` });
+        }
+        break;
+      case '/agent':
+        const goal = args.join(' ');
+        if (!goal) {
+          addMessage({ role: 'fux', content: 'Please provide a goal for the agent. Usage: /agent <your goal>' });
+          break;
+        }
+        setCurrentTask(`Formulating plan for: "${goal}"`);
+        addMessage({ role: 'system_core', content: `AGENT MODE: ENGAGED. Goal: ${goal}` });
+        try {
+          const plan = await createExecutionPlan(goal);
+          addMessage({
+            role: 'fux',
+            content: 'Execution plan formulated. Initiating sequence.',
+            agentPlan: plan
+          });
+
+          for (const [index, step] of plan.entries()) {
+            addMessage({ role: 'system_core', content: `[STEP ${index + 1}/${plan.length}] Executing: ${step.tool}` });
+            setCurrentTask(`Executing step ${index + 1}: ${step.tool}`);
+            
+            switch (step.tool) {
+              case 'vmix':
+                const [sub, ...vmixArgs] = step.args.split(/\s+/);
+                if (sub === 'switch' && vmixArgs[0] === 'input' && vmixArgs.length === 2) {
+                   await vmixService.sendCommand('Cut', { Input: vmixArgs[1] });
+                   addMessage({ role: 'system_core', content: `vMix command successful: Switched to input ${vmixArgs[1]}` });
+                } else { throw new Error(`Unsupported vMix agent command: ${step.args}`); }
+                break;
+              case 'blender':
+                const result = await blenderService.runScript(step.args);
+                addMessage({ role: 'system_core', content: `Blender script result:\n${JSON.stringify(result, null, 2)}` });
+                break;
+              case 'generateImage':
+                const base64Image = await generateImage(step.args);
+                addMessage({ role: 'fux', content: `Image generated for: "${step.args}"`, imageUrl: `data:image/png;base64,${base64Image}` });
+                break;
+              case 'search':
+                const searchResult = await googleSearch(step.args);
+                addMessage({ role: 'fux', content: searchResult.text, sources: searchResult.sources });
+                break;
+              case 'finalAnswer':
+                addMessage({ role: 'fux', content: step.args });
+                break;
+              default:
+                throw new Error(`Unknown tool specified by agent: ${step.tool}`);
+            }
+          }
+          addMessage({ role: 'system_core', content: `AGENT MODE: COMPLETED.` });
+        } catch (e: any) {
+          addMessage({ role: 'system_core', content: `AGENT MODE: FAILED. Error: ${e.message}` });
         }
         break;
       default:

@@ -1,4 +1,4 @@
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
 import type { Message } from "../App";
 
 // According to guidelines, initialize with a named parameter for the API key.
@@ -13,6 +13,89 @@ const getChatHistory = (messages: Message[]) => {
       parts: [{ text: m.content }],
     }));
 };
+
+export interface AgentStep {
+  tool: 'vmix' | 'blender' | 'generateImage' | 'search' | 'finalAnswer';
+  args: string;
+  thought: string;
+}
+
+export const createExecutionPlan = async (goal: string): Promise<AgentStep[]> => {
+  const model = 'gemini-2.5-flash';
+  
+  const prompt = `You are FuX, an AI agent that can control various tools to achieve a user's goal.
+  Based on the user's request, create a step-by-step plan.
+  You have access to the following tools:
+  - vmix: Control vMix live production software. Usage: "switch input <input_name_or_number>"
+  - blender: Execute a Python script in Blender. Usage: "<python_script_string>"
+  - generateImage: Generate an image from a text prompt. Usage: "<image_prompt>"
+  - search: Search the web for information. Usage: "<search_query>"
+  - finalAnswer: Provide a final text answer to the user after all steps are complete. Usage: "<summary_of_results>"
+  
+  Your task is to decompose the user's goal into a sequence of tool calls. For each step, provide your thought process, the tool to use, and the arguments for that tool.
+  The final step should almost always be 'finalAnswer' to summarize what you have done.
+
+  User's goal: "${goal}"
+  
+  Respond with a JSON object that strictly adheres to the provided schema.`;
+
+  const response = await ai.models.generateContent({
+    model,
+    contents: prompt,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          plan: {
+            type: Type.ARRAY,
+            description: "The sequence of steps to achieve the goal.",
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                thought: {
+                  type: Type.STRING,
+                  description: "Your reasoning for choosing this tool and these arguments."
+                },
+                tool: {
+                  type: Type.STRING,
+                  description: "The name of the tool to use.",
+                  enum: ['vmix', 'blender', 'generateImage', 'search', 'finalAnswer']
+                },
+                args: {
+                  type: Type.STRING,
+                  description: "The arguments to pass to the tool."
+                }
+              },
+              required: ['thought', 'tool', 'args']
+            }
+          }
+        }
+      }
+    }
+  });
+
+  try {
+    const jsonText = response.text.trim();
+    const parsed = JSON.parse(jsonText);
+    if (parsed.plan && Array.isArray(parsed.plan)) {
+      // Basic validation for the plan structure
+      const isValidPlan = parsed.plan.every((step: any) => 
+        typeof step.thought === 'string' &&
+        typeof step.tool === 'string' &&
+        typeof step.args === 'string'
+      );
+      if (isValidPlan) {
+        return parsed.plan as AgentStep[];
+      }
+    }
+    throw new Error("Invalid plan structure received from AI.");
+  } catch (e) {
+    console.error("Failed to parse agent plan:", e, "Raw response:", response.text);
+    throw new Error("The AI core failed to generate a valid execution plan.");
+  }
+};
+
 
 export const analyzeCode = async (prompt: string, history: Message[]): Promise<string> => {
   try {

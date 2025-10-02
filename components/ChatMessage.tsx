@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import type { Message } from '../App';
+import type { Message, AgentStep } from '../App';
 
 interface ChatMessageProps {
   message: Message;
@@ -137,6 +137,23 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage
             </React.Fragment>
           ))}
         </pre>
+        {message.agentPlan && (
+          <div className="mt-4 pt-3 border-t border-slate-700">
+            <h4 className="text-xs text-indigo-400 font-bold mb-2 tracking-wider">[AGENT EXECUTION PLAN]</h4>
+            <ul className="space-y-2">
+              {message.agentPlan.map((step, index) => (
+                <li key={index} className="p-2 rounded-md bg-slate-900/50 border border-slate-700">
+                  <p className="text-xs text-slate-400 font-mono italic">
+                    <span className="font-bold text-slate-300">Step {index + 1}:</span> {step.thought}
+                  </p>
+                  <p className="text-sm text-cyan-400 font-semibold truncate mt-1 font-mono bg-slate-950 p-1 rounded">
+                    &gt; {step.tool}: {step.args}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {message.imageUrl && (
           <div className="mt-2 p-1 bg-slate-900/50 rounded-lg border border-slate-700">
             <img
