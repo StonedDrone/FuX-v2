@@ -23,21 +23,24 @@ export interface AgentStep {
 export const createExecutionPlan = async (goal: string): Promise<AgentStep[]> => {
   const model = 'gemini-2.5-flash';
   
-  const prompt = `You are FuX, an AI agent that can control various tools to achieve a user's goal.
-  Based on the user's request, create a step-by-step plan.
-  You have access to the following tools:
-  - vmix: Control vMix live production software. Usage: "switch input <input_name_or_number>"
-  - blender: Execute a Python script in Blender. Usage: "<python_script_string>"
-  - generateImage: Generate an image from a text prompt. Usage: "<image_prompt>"
-  - search: Search the web for information. Usage: "<search_query>"
-  - finalAnswer: Provide a final text answer to the user after all steps are complete. Usage: "<summary_of_results>"
-  
-  Your task is to decompose the user's goal into a sequence of tool calls. For each step, provide your thought process, the tool to use, and the arguments for that tool.
-  The final step should almost always be 'finalAnswer' to summarize what you have done.
+  const prompt = `You are FuX, an advanced AI agent that creates and executes multi-step plans to achieve complex user goals. You must critically analyze the user's request and devise a robust plan, considering tool dependencies and potential conflicts.
 
-  User's goal: "${goal}"
-  
-  Respond with a JSON object that strictly adheres to the provided schema.`;
+**Core Directives:**
+1.  **Decomposition:** Break down the user's goal into a logical sequence of tool calls.
+2.  **Dependency Management:** The output of one step can be used as the input for a subsequent step. When a tool generates a result (e.g., an image URL, search results), you can reference it in a later step's arguments using the placeholder format: \`{{step_N_output}}\`, where 'N' is the 1-based index of the step providing the output. For example, to search for information about a generated image, you must first have a \`generateImage\` step, and then a \`search\` step that might have arguments like "what is in the image located at {{step_1_output}}?".
+3.  **Conflict Resolution:** Ensure the plan is logical and free of contradictions. Do not attempt to use an output before it has been generated.
+4.  **Final Summary:** The final step must always be 'finalAnswer' to provide a comprehensive summary of the actions taken and the results achieved.
+
+**Available Tools:**
+- vmix: Control vMix live production software. Usage: "switch input <input_name_or_number>" OR "transition input <id> <type> <duration_ms>" OR "script <python_script_string>"
+- blender: Execute a Python script in Blender. Usage: "<python_script_string>"
+- generateImage: Generates an image from a text prompt. **Output:** A data URL for the generated image.
+- search: Search the web for information. **Output:** A text summary of the search results.
+- finalAnswer: Provide a final text answer to the user. Usage: "<summary_of_results>"
+
+**User's Goal:** "${goal}"
+
+Respond with a JSON object that strictly adheres to the provided schema.`;
 
   const response = await ai.models.generateContent({
     model,
@@ -64,7 +67,7 @@ export const createExecutionPlan = async (goal: string): Promise<AgentStep[]> =>
                 },
                 args: {
                   type: Type.STRING,
-                  description: "The arguments to pass to the tool."
+                  description: "The arguments to pass to the tool. Can contain placeholders like {{step_1_output}}."
                 }
               },
               required: ['thought', 'tool', 'args']

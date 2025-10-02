@@ -258,7 +258,7 @@ const App: React.FC = () => {
     
     switch (cmd) {
       case '/help':
-        addMessage({ role: 'fux', content: 'Available Commands:\n/help - Show this message\n/agent <goal> - Engage agent mode for a complex task\n/ingest <source> - Ingest a new Power Module\n/powers - List ingested Power Modules\n/use <module> [args] - Use a Power Module (e.g. vmix, blender)\n/generate image <prompt> - Create an image from a text description\n/search <query> - Get a web-grounded answer to a query' });
+        addMessage({ role: 'fux', content: 'Available Commands:\n/help - Show this message\n/agent <goal> - Engage agent mode for a complex task\n/ingest <source> - Ingest a new Power Module\n/powers - List ingested Power Modules\n/use <module> [args] - Use a Power Module (e.g. vmix, blender)\n  - vmix switch input <id>\n  - vmix transition input <id> <type> <duration_ms>\n  - vmix script <python_script>\n/generate image <prompt> - Create an image from a text description\n/search <query> - Get a web-grounded answer to a query' });
         break;
       case '/ingest':
         // Mock ingestion
@@ -284,22 +284,44 @@ const App: React.FC = () => {
         }
         
         if (powerName.toLowerCase() === 'vmix') {
-          if (powerArgs.length === 3 && powerArgs[0].toLowerCase() === 'switch' && powerArgs[1].toLowerCase() === 'input') {
-            const inputId = powerArgs[2];
-            if (inputId) {
-              setCurrentTask(`Executing vMix command: Switch to input ${inputId}`);
-              try {
-                // 'Cut' is an instant switch in vMix.
-                await vmixService.sendCommand('Cut', { Input: inputId });
-                addMessage({ role: 'system_core', content: `vMix command successful: Switched to input ${inputId}` });
-              } catch (e: any) {
-                addMessage({ role: 'system_core', content: `vMix command failed: ${e.message}` });
-              }
-            } else {
-              addMessage({ role: 'fux', content: `Invalid input provided. Usage: /use vmix switch input <input_number_or_name>` });
+          const [subCommand, keyword, ...rest] = powerArgs;
+          if (subCommand?.toLowerCase() === 'switch' && keyword?.toLowerCase() === 'input' && rest.length === 1) {
+            const inputId = rest[0];
+            setCurrentTask(`Executing vMix command: Switch to input ${inputId}`);
+            try {
+              await vmixService.sendCommand('Cut', { Input: inputId });
+              addMessage({ role: 'system_core', content: `vMix command successful: Switched to input ${inputId}` });
+            } catch (e: any) {
+              addMessage({ role: 'system_core', content: `vMix command failed: ${e.message}` });
+            }
+          } else if (subCommand?.toLowerCase() === 'transition' && keyword?.toLowerCase() === 'input' && rest.length === 3) {
+            const [inputId, transitionType, duration] = rest;
+            if (isNaN(parseInt(duration))) {
+              addMessage({ role: 'fux', content: 'Invalid duration. Must be a number in milliseconds.' });
+              break;
+            }
+            setCurrentTask(`Executing vMix transition: ${transitionType} to input ${inputId} over ${duration}ms`);
+            try {
+              await vmixService.sendCommand(transitionType, { Input: inputId, Duration: duration });
+              addMessage({ role: 'system_core', content: `vMix command successful: Transitioned to input ${inputId}` });
+            } catch (e: any) {
+              addMessage({ role: 'system_core', content: `vMix command failed: ${e.message}` });
+            }
+          } else if (subCommand?.toLowerCase() === 'script') {
+            const script = [keyword, ...rest].join(' ');
+            if (!script) {
+                addMessage({ role: 'fux', content: 'Please provide a script to execute. Usage: /use vmix script <your_script>' });
+                break;
+            }
+            setCurrentTask(`Executing vMix script...`);
+            try {
+                await vmixService.runScript(script);
+                addMessage({ role: 'system_core', content: `vMix script sent for execution.` });
+            } catch (e: any) {
+                addMessage({ role: 'system_core', content: `vMix script execution failed: ${e.message}` });
             }
           } else {
-            addMessage({ role: 'fux', content: "Invalid vMix command. Supported format: /use vmix switch input <input_number_or_name>" });
+            addMessage({ role: 'fux', content: "Invalid vMix command. Supported formats: 'switch input <id>', 'transition input <id> <type> <duration_ms>', or 'script <python_script>'" });
           }
           break;
         }
@@ -388,37 +410,71 @@ const App: React.FC = () => {
             content: 'Execution plan formulated. Initiating sequence.',
             agentPlan: plan
           });
+          
+          const stepOutputs: Record<string, any> = {};
 
           for (const [index, step] of plan.entries()) {
             addMessage({ role: 'system_core', content: `[STEP ${index + 1}/${plan.length}] Executing: ${step.tool}` });
             setCurrentTask(`Executing step ${index + 1}: ${step.tool}`);
             
+            // Resolve placeholders in args from previous step outputs
+            const placeholderRegex = /\{\{step_(\d+)_output\}\}/g;
+            const resolvedArgs = step.args.replace(placeholderRegex, (match, stepIndexStr) => {
+                const stepIndex = parseInt(stepIndexStr, 10) - 1; // 1-based to 0-based
+                if (stepOutputs[stepIndex] !== undefined && stepOutputs[stepIndex] !== null) {
+                    return String(stepOutputs[stepIndex]);
+                }
+                throw new Error(`Could not resolve placeholder ${match}. Output from step ${stepIndex + 1} not found or was null.`);
+            });
+            
+            let currentStepOutput: any = null;
+            
             switch (step.tool) {
               case 'vmix':
-                const [sub, ...vmixArgs] = step.args.split(/\s+/);
-                if (sub === 'switch' && vmixArgs[0] === 'input' && vmixArgs.length === 2) {
-                   await vmixService.sendCommand('Cut', { Input: vmixArgs[1] });
-                   addMessage({ role: 'system_core', content: `vMix command successful: Switched to input ${vmixArgs[1]}` });
-                } else { throw new Error(`Unsupported vMix agent command: ${step.args}`); }
+                const vmixCommandParts = resolvedArgs.split(/\s+/);
+                const vmixSubCommand = vmixCommandParts[0];
+
+                if (vmixSubCommand === 'switch' && vmixCommandParts[1] === 'input' && vmixCommandParts.length === 3) {
+                    const inputId = vmixCommandParts[2];
+                    await vmixService.sendCommand('Cut', { Input: inputId });
+                    addMessage({ role: 'system_core', content: `vMix command successful: Switched to input ${inputId}` });
+                } else if (vmixSubCommand === 'transition' && vmixCommandParts[1] === 'input' && vmixCommandParts.length === 5) {
+                    const inputId = vmixCommandParts[2];
+                    const transitionType = vmixCommandParts[3];
+                    const duration = vmixCommandParts[4];
+                    await vmixService.sendCommand(transitionType, { Input: inputId, Duration: duration });
+                    addMessage({ role: 'system_core', content: `vMix command successful: Transitioned to input ${inputId} via ${transitionType}` });
+                } else if (vmixSubCommand === 'script') {
+                    const script = vmixCommandParts.slice(1).join(' ');
+                    await vmixService.runScript(script);
+                    addMessage({ role: 'system_core', content: `vMix script executed successfully via agent.` });
+                } else {
+                    throw new Error(`Unsupported vMix agent command format: ${resolvedArgs}`);
+                }
                 break;
               case 'blender':
-                const result = await blenderService.runScript(step.args);
-                addMessage({ role: 'system_core', content: `Blender script result:\n${JSON.stringify(result, null, 2)}` });
+                const result = await blenderService.runScript(resolvedArgs);
+                currentStepOutput = JSON.stringify(result);
+                addMessage({ role: 'system_core', content: `Blender script result:\n${currentStepOutput}` });
                 break;
               case 'generateImage':
-                const base64Image = await generateImage(step.args);
-                addMessage({ role: 'fux', content: `Image generated for: "${step.args}"`, imageUrl: `data:image/png;base64,${base64Image}` });
+                const base64Image = await generateImage(resolvedArgs);
+                const imageUrl = `data:image/png;base64,${base64Image}`;
+                currentStepOutput = imageUrl;
+                addMessage({ role: 'fux', content: `Image generated for: "${resolvedArgs}"`, imageUrl: imageUrl });
                 break;
               case 'search':
-                const searchResult = await googleSearch(step.args);
+                const searchResult = await googleSearch(resolvedArgs);
+                currentStepOutput = searchResult.text;
                 addMessage({ role: 'fux', content: searchResult.text, sources: searchResult.sources });
                 break;
               case 'finalAnswer':
-                addMessage({ role: 'fux', content: step.args });
+                addMessage({ role: 'fux', content: resolvedArgs });
                 break;
               default:
                 throw new Error(`Unknown tool specified by agent: ${step.tool}`);
             }
+            stepOutputs[index] = currentStepOutput;
           }
           addMessage({ role: 'system_core', content: `AGENT MODE: COMPLETED.` });
         } catch (e: any) {

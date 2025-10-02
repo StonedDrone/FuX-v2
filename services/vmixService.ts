@@ -74,6 +74,14 @@ class VMixService {
             throw new Error(`Failed to send command to vMix. Check connection.`);
         }
     }
+
+    /**
+     * Sends a Python script to vMix for dynamic execution.
+     * @param script The Python script to execute.
+     */
+    async runScript(script: string): Promise<void> {
+        await this.sendCommand('ScriptStartDynamic', { Value: script });
+    }
 }
 
 export const vmixService = new VMixService();
