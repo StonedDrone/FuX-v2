@@ -5,9 +5,8 @@ import { PluginRegistry } from './components/PluginRegistry';
 import { Hud } from './components/Hud';
 import { ConnectionsPanel } from './components/ConnectionsPanel';
 import { ErrorDisplay } from './components/ErrorDisplay';
-import { analyzeCode, executeCode, generateImage, googleSearch, createExecutionPlan, AgentStep } from './services/geminiService';
+import { analyzeCode, executeCode, generateImage, googleSearch, createExecutionPlan, describePowers, AgentStep } from './services/geminiService';
 import { GoogleGenAI, LiveServerMessage, Modality, Blob } from '@google/genai';
-import { encode, decode, decodeAudioData } from './utils/audioUtils';
 import { vmixService } from './services/vmixService';
 import { blenderService } from './services/blenderService';
 import { videoService } from './services/videoService';
@@ -398,8 +397,16 @@ const App: React.FC = () => {
         if (plugins.length === 0) {
           addMessage({ role: 'fux', content: 'No Power Modules have been ingested. Use /ingest <source> to add one.' });
         } else {
-          const powerList = plugins.map(p => `- ${p.power_name} (${p.source})`).join('\n');
-          addMessage({ role: 'fux', content: `Available Power Modules:\n${powerList}` });
+          setCurrentTask('Accessing Power Module Arsenal...');
+          try {
+            const powerDescriptions = await describePowers(plugins);
+            addMessage({ role: 'fux', content: powerDescriptions });
+          } catch (e: any) {
+            addMessage({ role: 'system_core', content: `Failed to generate power descriptions: ${e.message}` });
+            // Fallback to old behavior
+            const powerList = plugins.map(p => `- ${p.power_name} (${p.source})`).join('\n');
+            addMessage({ role: 'fux', content: `Available Power Modules (Fallback):\n${powerList}` });
+          }
         }
         break;
       case '/use':
