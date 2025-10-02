@@ -7,7 +7,7 @@ import { ConnectionsPanel } from './components/ConnectionsPanel';
 import { ErrorDisplay } from './components/ErrorDisplay';
 import { PowersGuide } from './components/PowersGuide';
 import { analyzeCode, executeCode, generateImage, googleSearch, createExecutionPlan, categorizePlugin, AgentStep } from './services/geminiService';
-import { GoogleGenAI, LiveServerMessage, Modality, Blob } from '@google/ai-studio-static';
+import { GoogleGenAI, LiveServerMessage, Modality, Blob } from '@google/genai';
 import { vmixService } from './services/vmixService';
 import { blenderService } from './services/blenderService';
 import { videoService } from './services/videoService';

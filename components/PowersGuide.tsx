@@ -131,7 +131,8 @@ export const PowersGuide: React.FC<PowersGuideProps> = ({ isOpen, plugins, onClo
         </button>
         <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-[500px]' : 'max-h-0'}`}>
           <ul className="p-3 pt-0 space-y-2">
-            {(powers as Plugin[]).map(plugin => (
+            {/* FIX: Removed redundant cast as `powers` is already typed in the function signature. */}
+            {powers.map(plugin => (
               <PowerItem
                 key={plugin.power_name}
                 plugin={plugin}
@@ -171,9 +172,10 @@ export const PowersGuide: React.FC<PowersGuideProps> = ({ isOpen, plugins, onClo
           ) : (
             <div className="space-y-3">
               {renderCategory('Favorites', favoritePlugins, true)}
-              {Object.entries(categorizedPlugins)
-                .sort(([catA], [catB]) => catA.localeCompare(catB))
-                .map(([category, powers]) => renderCategory(category, powers))}
+              {/* FIX: Replaced Object.entries with Object.keys for better type inference from TypeScript. */}
+              {Object.keys(categorizedPlugins)
+                .sort((catA, catB) => catA.localeCompare(catB))
+                .map((category) => renderCategory(category, categorizedPlugins[category]))}
             </div>
           )}
         </div>

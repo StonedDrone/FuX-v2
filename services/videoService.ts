@@ -31,9 +31,11 @@ class VideoService {
      */
     async checkConnection(host: string, port: string): Promise<boolean> {
         try {
-            // A simple GET request to a root or status endpoint can verify connectivity.
-            const response = await fetch(`http://${host}:${port}/`);
-            return response.ok;
+            // Use 'no-cors' for a simple connectivity check to a local service.
+            // We can't inspect the response, but a successful fetch (not throwing an error)
+            // indicates the endpoint is reachable, bypassing CORS issues for the check.
+            await fetch(`http://${host}:${port}/`, { mode: 'no-cors' });
+            return true;
         } catch (error) {
             console.error("Video service connection check failed:", error);
             return false;
