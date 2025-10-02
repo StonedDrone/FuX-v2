@@ -1,11 +1,12 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Loader } from './components/Loader';
-import { continueChat, getPowerSummary } from './services/geminiService';
+import { continueChat, getPowerSummary, getPowerCategory, ai } from './services/geminiService';
 import { Header } from './components/Header';
 import { ErrorDisplay } from './components/ErrorDisplay';
 import { ChatInterface } from './components/ChatInterface';
 import { openDB, DBSchema } from 'idb';
 import { PluginRegistry } from './components/PluginRegistry';
+import { GoogleGenAI, LiveServerMessage, Modality, Blob, LiveSession } from '@google/genai';
 
 export type Message = {
   role: 'user' | 'fux' | 'system_core';
@@ -16,6 +17,7 @@ export type Message = {
 declare global {
   interface Window {
     loadPyodide: (config?: any) => Promise<any>;
+    webkitAudioContext: typeof AudioContext;
   }
 }
 
@@ -29,6 +31,44 @@ interface FuXDB extends DBSchema {
     value: any;
   }
 }
+
+// --- Audio Utils (as per Gemini Docs) ---
+function encode(bytes: Uint8Array) {
+  let binary = '';
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+function decode(base64: string) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+async function decodeAudioData(
+  data: Uint8Array,
+  ctx: AudioContext,
+  sampleRate: number,
+  numChannels: number,
+): Promise<AudioBuffer> {
+  const dataInt16 = new Int16Array(data.buffer);
+  const frameCount = dataInt16.length / numChannels;
+  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+
+  for (let channel = 0; channel < numChannels; channel++) {
+    const channelData = buffer.getChannelData(channel);
+    for (let i = 0; i < frameCount; i++) {
+      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+    }
+  }
+  return buffer;
+}
+
 
 // --- Helper for fetch with timeout ---
 const fetchWithTimeout = (resource: RequestInfo, options: RequestInit = {}, timeout = 15000): Promise<Response> => {
@@ -78,6 +118,20 @@ const App: React.FC = () => {
   const [plugins, setPlugins] = useState<any[]>([]);
   const [isRegistryOpen, setIsRegistryOpen] = useState(false);
 
+  // --- Voice State ---
+  const [isListening, setIsListening] = useState(false);
+  const [isSessionInitializing, setIsSessionInitializing] = useState(false);
+  const sessionPromiseRef = useRef<Promise<LiveSession> | null>(null);
+  const inputAudioContextRef = useRef<AudioContext | null>(null);
+  const outputAudioContextRef = useRef<AudioContext | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const nextStartTimeRef = useRef(0);
+  const sourcesRef = useRef(new Set<AudioBufferSourceNode>());
+  const inputTranscriptionRef = useRef('');
+  const outputTranscriptionRef = useRef('');
+
+
   // Effect for Pyodide initialization
   useEffect(() => {
     const loadPyodideInstance = async () => {
@@ -108,13 +162,6 @@ const App: React.FC = () => {
   useEffect(() => {
     loadPlugins();
   }, [loadPlugins]);
-
-  const handleToggleTts = () => {
-    if (isTtsEnabled) {
-      window.speechSynthesis.cancel();
-    }
-    setIsTtsEnabled(prev => !prev);
-  };
   
   const addSystemMessage = (content: string) => {
     const systemMessage: Message = { role: 'system_core', content };
@@ -182,12 +229,33 @@ const App: React.FC = () => {
 
       const files = await Promise.all(filePromises);
       await db.set('plugins', repoName.toLowerCase(), files);
+      
+      addSystemMessage(`Analyzing Power Module for categorization...`);
+      // --- Categorization Step ---
+      let contentToAnalyze = '';
+      const readmeFile = files.find((f: any) => f.path.toLowerCase() === 'readme.md');
+      if (readmeFile) {
+        contentToAnalyze = readmeFile.content;
+      } else {
+        const entryPoints = [`main.py`, `app.py`, `${repoName.toLowerCase()}.py`];
+        const entryPoint = files.find((f: any) => entryPoints.includes(f.path));
+        if (entryPoint) contentToAnalyze = entryPoint.content;
+      }
+      
+      let category = 'General';
+      if (contentToAnalyze) {
+        category = await getPowerCategory(contentToAnalyze);
+      }
+      addSystemMessage(`Module classified as: ${category}`);
+      // --- End Categorization ---
+
 
       let index = await db.get('key-val', 'core_index') || {};
       index[repoName.toLowerCase()] = {
           power_name: repoName,
           source: fullUrl,
-          ingested_at: new Date().toISOString()
+          ingested_at: new Date().toISOString(),
+          category: category,
       };
       await db.set('key-val', 'core_index', index);
       
@@ -204,7 +272,7 @@ const App: React.FC = () => {
     }
   }, [loadPlugins]);
 
-  const executePowerModule = useCallback(async (powerName: string, args: string[]) => {
+  const executePowerModule = useCallback(async (powerName: string, args: string[]): Promise<string> => {
     addSystemMessage(`Executing Power Module: ${powerName} with args: [${args.join(', ')}]`);
     try {
         const index = await db.get('key-val', 'core_index');
@@ -276,12 +344,12 @@ stdout_val + stderr_val
         `;
         
         const output = await pyodide.runPythonAsync(pythonCode);
-        addSystemMessage(`--- Output from ${entryPoint.path} ---\n${output || "[No output]"}`);
+        return output || "";
 
     } catch (e) {
         const errorMessage = e instanceof Error ? e.message : "An unknown error occurred during execution.";
-        setError(errorMessage);
         addSystemMessage(`❌ Execution failed: ${errorMessage}`);
+        throw e;
     }
   }, [pyodide]);
   
@@ -293,7 +361,11 @@ stdout_val + stderr_val
     setIsLoading(true);
     setCurrentTask(`Executing: ${powerName}`);
     try {
-      await executePowerModule(powerName, args);
+      const output = await executePowerModule(powerName, args);
+      addSystemMessage(`--- Output from ${powerName} ---\n${output || "[No output]"}`);
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : "An unknown error occurred.";
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
       setCurrentTask(null);
@@ -316,7 +388,8 @@ stdout_val + stderr_val
         } else {
              for (const powerName of powerNames) {
                 setCurrentTask(`Executing: ${powerName}`);
-                await executePowerModule(powerName, args);
+                const output = await executePowerModule(powerName, args);
+                addSystemMessage(`--- Output from ${powerName} ---\n${output || "[No output]"}`);
             }
             addSystemMessage("✅ All Power Modules executed.");
         }
@@ -327,6 +400,48 @@ stdout_val + stderr_val
     } finally {
         setIsLoading(false);
         setCurrentTask(null);
+    }
+  }, [pyodide, executePowerModule]);
+
+  const handlePipeCommand = useCallback(async (pipeString: string) => {
+    if (!pyodide) {
+      setError("Execution engine is not ready.");
+      return;
+    }
+    setIsLoading(true);
+    addSystemMessage(`Piping command execution initiated...`);
+
+    const commands = pipeString.split('|').map(cmd => cmd.trim());
+    let previousOutput = '';
+
+    try {
+      for (let i = 0; i < commands.length; i++) {
+        const commandStr = commands[i];
+        if (!commandStr) {
+          throw new Error(`Pipe error: Empty command at stage ${i + 1}.`);
+        }
+
+        const [powerName, ...args] = commandStr.split(/\s+/);
+        const currentArgs = [...args];
+        if (i > 0) {
+          currentArgs.push(previousOutput);
+        }
+
+        setCurrentTask(`[Pipe ${i + 1}/${commands.length}] Executing: ${powerName}`);
+        const output = await executePowerModule(powerName, currentArgs);
+        previousOutput = output.trim();
+        addSystemMessage(`-> [Pipe ${i + 1}] Output captured.`);
+      }
+      addSystemMessage(`--- Final Pipe Output ---\n${previousOutput || "[No output]"}`);
+      addSystemMessage("✅ Pipe execution complete.");
+
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : "An unknown error occurred during pipe execution.";
+      setError(errorMessage);
+      addSystemMessage(`❌ Pipe execution failed: ${errorMessage}`);
+    } finally {
+      setIsLoading(false);
+      setCurrentTask(null);
     }
   }, [pyodide, executePowerModule]);
 
@@ -361,18 +476,15 @@ stdout_val + stderr_val
             if (!files) continue;
 
             let contentToSummarize = '';
-            let sourceFile = '';
             const readmeFile = files.find((f: any) => f.path.toLowerCase() === 'readme.md');
             
             if (readmeFile) {
                 contentToSummarize = readmeFile.content;
-                sourceFile = readmeFile.path;
             } else {
                 const entryPoints = [`main.py`, `app.py`, `${powerName.toLowerCase()}.py`];
                 const entryPoint = files.find((f: any) => entryPoints.includes(f.path));
                 if (entryPoint) {
                     contentToSummarize = entryPoint.content;
-                    sourceFile = entryPoint.path;
                 }
             }
             
@@ -394,29 +506,95 @@ stdout_val + stderr_val
     }
   }, []);
   
+    const handleCategorizeCommand = useCallback(async () => {
+    setIsLoading(true);
+    addSystemMessage("Initiating retroactive categorization of all Power Modules...");
+    try {
+      const index = await db.get('key-val', 'core_index') || {};
+      const powers: any[] = Object.values(index);
+      let updatedCount = 0;
+
+      if (powers.length === 0) {
+        addSystemMessage("No Power Modules to categorize.");
+        return;
+      }
+      
+      let newIndex = { ...index };
+
+      for (const power of powers) {
+        if (power.category) continue; // Skip already categorized modules
+
+        const powerName = power.power_name;
+        addSystemMessage(`Analyzing "${powerName}"...`);
+        
+        const files = await db.get('plugins', powerName.toLowerCase());
+        if (!files) continue;
+
+        let contentToAnalyze = '';
+        const readmeFile = files.find((f: any) => f.path.toLowerCase() === 'readme.md');
+        if (readmeFile) {
+          contentToAnalyze = readmeFile.content;
+        } else {
+          const entryPoints = [`main.py`, `app.py`, `${powerName.toLowerCase()}.py`];
+          const entryPoint = files.find((f: any) => entryPoints.includes(f.path));
+          if (entryPoint) contentToAnalyze = entryPoint.content;
+        }
+
+        let category = 'General';
+        if (contentToAnalyze) {
+          category = await getPowerCategory(contentToAnalyze);
+        }
+        
+        newIndex[powerName.toLowerCase()].category = category;
+        updatedCount++;
+        addSystemMessage(` -> Classified as: ${category}`);
+      }
+
+      await db.set('key-val', 'core_index', newIndex);
+      await loadPlugins();
+      addSystemMessage(`✅ Categorization complete. ${updatedCount} modules updated.`);
+
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : "An unknown error occurred during categorization.";
+      setError(errorMessage);
+      addSystemMessage(`❌ Categorization failed: ${errorMessage}`);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [loadPlugins]);
+  
   const handleHelpCommand = useCallback(async () => {
     const helpText = `Available Commands:
 - /ingest <github_url>[#branch]: Ingest a new Power Module from a GitHub repo.
 - /run <power_name> [args...]: Execute an ingested Power Module.
 - /run-all [args...]: Execute all ingested Power Modules sequentially.
+- /pipe <cmd1> | <cmd2>...: Chain Power Modules, piping output to the next's input.
 - /list: Show all ingested Power Modules.
 - /summary: Get an AI-generated summary of each module's capabilities.
+- /categorize: Analyze and assign categories to all uncategorized modules.
 - /help: Display this help message.`;
     addSystemMessage(helpText);
   }, []);
 
-  const handleSendMessage = useCallback(async () => {
-    const message = input.trim();
-    if (!message || isLoading || pyodideLoading) return;
+  const handleSendMessage = useCallback(async (messageOverride?: string) => {
+    const messageToSend = (messageOverride ?? input).trim();
+    
+    // Replace placeholder if it exists before sending
+    const placeholder = '<arguments>';
+    const finalMessage = messageToSend.endsWith(placeholder) 
+      ? messageToSend.substring(0, messageToSend.lastIndexOf(placeholder)).trim()
+      : messageToSend;
+
+    if (!finalMessage || isLoading || pyodideLoading) return;
 
     window.speechSynthesis.cancel();
-    const newMessages: Message[] = [...messages, { role: 'user', content: message }];
+    const newMessages: Message[] = [...messages, { role: 'user', content: finalMessage }];
     setMessages(newMessages);
     setInput('');
     setError(null);
 
-    if (message.startsWith('/')) {
-        const [command, ...args] = message.trim().split(/\s+/);
+    if (finalMessage.startsWith('/')) {
+        const [command, ...args] = finalMessage.trim().split(/\s+/);
         switch (command) {
             case '/ingest':
                 if (args.length > 0) await handleIngestCommand(args[0]);
@@ -429,11 +607,18 @@ stdout_val + stderr_val
             case '/run-all':
                 await handleRunAllCommand(args);
                 break;
+            case '/pipe':
+                if (args.length > 0) await handlePipeCommand(args.join(' '));
+                else addSystemMessage("Usage: /pipe <module1> [args...] | <module2> [args...]");
+                break;
             case '/list':
                 await handleListCommand();
                 break;
             case '/summary':
                 await handleSummaryCommand();
+                break;
+            case '/categorize':
+                await handleCategorizeCommand();
                 break;
             case '/help':
                 await handleHelpCommand();
@@ -454,14 +639,136 @@ stdout_val + stderr_val
             setIsLoading(false);
         }
     }
-  }, [input, isLoading, pyodideLoading, messages, handleIngestCommand, handleRunCommand, handleRunAllCommand, handleListCommand, handleSummaryCommand, handleHelpCommand]);
+  }, [input, isLoading, pyodideLoading, messages, handleIngestCommand, handleRunCommand, handleRunAllCommand, handlePipeCommand, handleListCommand, handleSummaryCommand, handleCategorizeCommand, handleHelpCommand]);
+
+
+  const stopVoiceSession = useCallback(() => {
+    setIsListening(false);
+    setIsSessionInitializing(false);
+
+    mediaStreamRef.current?.getTracks().forEach(track => track.stop());
+    mediaStreamRef.current = null;
+    
+    scriptProcessorRef.current?.disconnect();
+    scriptProcessorRef.current = null;
+
+    inputAudioContextRef.current?.close();
+    inputAudioContextRef.current = null;
+
+    if (sessionPromiseRef.current) {
+        sessionPromiseRef.current.then(session => session.close());
+        sessionPromiseRef.current = null;
+    }
+  }, []);
+
+  const handleToggleVoice = useCallback(async () => {
+    if (isListening) {
+      stopVoiceSession();
+      return;
+    }
+
+    try {
+      setIsSessionInitializing(true);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      
+      inputAudioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      outputAudioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+      nextStartTimeRef.current = 0;
+      sourcesRef.current.clear();
+      inputTranscriptionRef.current = '';
+      outputTranscriptionRef.current = '';
+
+      sessionPromiseRef.current = ai.live.connect({
+        model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+        callbacks: {
+          onopen: () => {
+            setIsListening(true);
+            setIsSessionInitializing(false);
+            const source = inputAudioContextRef.current!.createMediaStreamSource(stream);
+            const scriptProcessor = inputAudioContextRef.current!.createScriptProcessor(4096, 1, 1);
+            scriptProcessorRef.current = scriptProcessor;
+            scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
+              const inputData = audioProcessingEvent.inputBuffer.getChannelData(0);
+              const pcmBlob: Blob = {
+                data: encode(new Uint8Array(new Int16Array(inputData.map(d => d * 32768)).buffer)),
+                mimeType: 'audio/pcm;rate=16000',
+              };
+              sessionPromiseRef.current?.then((session) => {
+                session.sendRealtimeInput({ media: pcmBlob });
+              });
+            };
+            source.connect(scriptProcessor);
+            scriptProcessor.connect(inputAudioContextRef.current!.destination);
+          },
+          onmessage: async (message: LiveServerMessage) => {
+            if (message.serverContent?.inputTranscription) {
+              inputTranscriptionRef.current += message.serverContent.inputTranscription.text;
+              setInput(inputTranscriptionRef.current);
+            }
+            if (message.serverContent?.outputTranscription) {
+              outputTranscriptionRef.current += message.serverContent.outputTranscription.text;
+            }
+            const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
+            if (base64Audio) {
+              const ctx = outputAudioContextRef.current!;
+              nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
+              const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
+              const source = ctx.createBufferSource();
+              source.buffer = audioBuffer;
+              source.connect(ctx.destination);
+              source.addEventListener('ended', () => { sourcesRef.current.delete(source); });
+              source.start(nextStartTimeRef.current);
+              nextStartTimeRef.current += audioBuffer.duration;
+              sourcesRef.current.add(source);
+            }
+            if (message.serverContent?.turnComplete) {
+              const finalInput = inputTranscriptionRef.current;
+              const finalOutput = outputTranscriptionRef.current;
+              if (finalOutput.trim()) {
+                addFuxMessage(finalOutput);
+              }
+              if (finalInput.trim()) {
+                handleSendMessage(finalInput);
+              }
+              inputTranscriptionRef.current = '';
+              outputTranscriptionRef.current = '';
+            }
+          },
+          onerror: (e: ErrorEvent) => {
+            setError(`Voice session error: ${e.message}`);
+            stopVoiceSession();
+          },
+          onclose: (e: CloseEvent) => {
+            stopVoiceSession();
+          },
+        },
+        config: {
+          responseModalities: [Modality.AUDIO],
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
+        }
+      });
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error("An unknown error occurred");
+      setError(`Failed to start voice session: ${err.message}`);
+      stopVoiceSession();
+    }
+  }, [isListening, stopVoiceSession, handleSendMessage]);
 
   const toggleRegistry = () => setIsRegistryOpen(prev => !prev);
 
   const handlePluginSelect = (powerName: string) => {
-    setInput(`/run ${powerName} `);
+    setInput(`/run ${powerName} <arguments>`);
     setIsRegistryOpen(false);
   };
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopVoiceSession();
+    };
+  }, [stopVoiceSession]);
 
   if (pyodideLoading) {
     return <div className="fixed inset-0 bg-black flex flex-col items-center justify-center">
@@ -474,7 +781,7 @@ stdout_val + stderr_val
       <div className="w-full max-w-4xl mx-auto">
         <Header 
             isTtsEnabled={isTtsEnabled} 
-            onToggleTts={handleToggleTts}
+            onToggleTts={() => setIsTtsEnabled(prev => !prev)}
             onToggleRegistry={toggleRegistry}
         />
         <main className="mt-8">
@@ -483,10 +790,13 @@ stdout_val + stderr_val
             messages={messages} 
             input={input}
             setInput={setInput}
-            onSendMessage={handleSendMessage}
+            onSendMessage={() => handleSendMessage()}
             isReplying={isLoading}
             currentTask={currentTask}
             isTtsEnabled={isTtsEnabled}
+            isListening={isListening}
+            isSessionInitializing={isSessionInitializing}
+            onToggleVoice={handleToggleVoice}
           />
         </main>
       </div>

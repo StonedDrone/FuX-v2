@@ -4,6 +4,7 @@ import { CloseIcon } from './icons/CloseIcon';
 interface Plugin {
   power_name: string;
   source: string;
+  category?: string;
 }
 
 interface PluginRegistryProps {
@@ -12,6 +13,17 @@ interface PluginRegistryProps {
   onPluginSelect: (powerName: string) => void;
   onClose: () => void;
 }
+
+const categoryColorMap: { [key: string]: string } = {
+  'Data': 'border-l-blue-400 hover:bg-blue-900/50 hover:border-blue-300',
+  'Utility': 'border-l-green-400 hover:bg-green-900/50 hover:border-green-300',
+  'Web': 'border-l-purple-400 hover:bg-purple-900/50 hover:border-purple-300',
+  'Robotics': 'border-l-rose-400 hover:bg-rose-900/50 hover:border-rose-300',
+  'AI/ML': 'border-l-amber-400 hover:bg-amber-900/50 hover:border-amber-300',
+  'System': 'border-l-indigo-400 hover:bg-indigo-900/50 hover:border-indigo-300',
+  'General': 'border-l-slate-500 hover:bg-slate-700/50 hover:border-slate-400',
+};
+const defaultColor = 'border-l-slate-700 hover:bg-slate-700/50 hover:border-slate-500';
 
 export const PluginRegistry: React.FC<PluginRegistryProps> = ({ isOpen, plugins, onPluginSelect, onClose }) => {
   return (
@@ -38,17 +50,23 @@ export const PluginRegistry: React.FC<PluginRegistryProps> = ({ isOpen, plugins,
             <p className="text-slate-500 text-center mt-8">No Power Modules ingested. Use the <code className="bg-slate-800 px-1 rounded">/ingest</code> command.</p>
           ) : (
             <ul className="space-y-2">
-              {plugins.map((plugin) => (
-                <li key={plugin.power_name}>
-                  <button
-                    onClick={() => onPluginSelect(plugin.power_name)}
-                    className="w-full text-left p-3 rounded-lg bg-slate-800/50 hover:bg-cyan-900/50 border border-slate-700 hover:border-cyan-700 transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  >
-                    <p className="font-bold text-slate-100">{plugin.power_name}</p>
-                    <p className="text-xs text-slate-400 truncate mt-1">Source: {plugin.source}</p>
-                  </button>
-                </li>
-              ))}
+              {plugins.map((plugin) => {
+                const colorClass = categoryColorMap[plugin.category || ''] || defaultColor;
+                return (
+                  <li key={plugin.power_name}>
+                    <button
+                      onClick={() => onPluginSelect(plugin.power_name)}
+                      className={`w-full text-left p-3 rounded-lg bg-slate-800/50 border-l-4 transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500 ${colorClass}`}
+                    >
+                      <div className="flex justify-between items-center">
+                        <p className="font-bold text-slate-100">{plugin.power_name}</p>
+                        {plugin.category && <p className="text-xs text-slate-400 bg-slate-700/50 px-2 py-0.5 rounded">{plugin.category}</p>}
+                      </div>
+                      <p className="text-xs text-slate-400 truncate mt-1">Source: {plugin.source}</p>
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </div>

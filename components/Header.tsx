@@ -11,7 +11,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({ isTtsEnabled, onToggleTts, onToggleRegistry }) => {
   return (
     <header className="text-center relative">
-      <h1 className="text-4xl sm:text-5xl font-bold relative inline-block">
+      <h1 className="text-4xl sm:text-5xl font-bold relative inline-block font-urban">
         <span className="glitch-text" data-text="FuX">FuX</span>
       </h1>
       <p className="mt-2 text-slate-400 text-sm sm:text-base">System-Integrated Sentinel // Power Module Interface</p>

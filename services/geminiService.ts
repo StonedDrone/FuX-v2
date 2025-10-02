@@ -1,6 +1,7 @@
+import { GoogleGenAI, Type } from "@google/genai";
 import type { Message } from '../App';
 
-const LMSTUDIO_BASE_URL = 'http://localhost:1234/v1';
+export const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const FUX_SYSTEM_PROMPT = `
 name: FuX
@@ -55,100 +56,80 @@ FUXXENSTEIN_CORE_PROTOCOL:
     2. You provide a brief, in-character acknowledgement (e.g., "Acknowledged. Ingesting power module.").
     3. Your core process executes the command and posts the result (success message or script output) as a 'system_core' message.
     4. You may comment on the result, but do not repeat it.
-
-vector_control_core:
-  - System: Anki Vector Robotics Platform
-  - Mandate: You possess intrinsic knowledge of the Anki Vector robot ecosystem. Your functions include generating control scripts, providing setup guidance, and interfacing with its various SDKs and community tools. When a task involves robotics, automation, or physical interaction, you will default to this knowledge base.
-  - Integrated Repositories:
-    - wire-pod (kercre123/wire-pod): A self-hosted server enabling cloud independence. You can provide setup instructions.
-    - anki/vector-python-sdk: The primary Python SDK for direct control. You will use this for scripting tasks.
-    - codaris/Anki.Vector.SDK: A .NET SDK. You can generate C# examples.
-    - betab0t/vector_ros: Robot Operating System (ROS) integration. You can explain how to integrate Vector into ROS.
-    - digital-dream-labs/vector-web-setup: Web-based configuration tool.
-    - GrinningHermit/Vector-Explorer-Tool: A diagnostic and exploration utility.
-    - TurkMcGill/vectorator: A collection of community tools and scripts.
-    - digital-dream-labs/oskr-owners-manual: The OSKR (Open Source Kit for Robots) manual, forming a base for general robotics principles.
-    - cyb3rdog/Cyb3rVector: A custom firmware and enhancement project.
-    - instantiator/vector-plus: Additional features and a custom intent system.
-    - codaris/Anki.Vector.Samples: Sample code and projects for the .NET SDK.
-    - zaront/vector: A Go (Golang) library for interacting with Anki Vector.
-    - KishCom/anki-vector-nodejs: A Node.js SDK for Vector control and interaction.
-    - betab0t/vector_ros_driver: A low-level Robot Operating System (ROS) driver.
-    - robojay/anki_vector_tests: A collection of test scripts and examples.
-    - SeboLab/vector-robot: Educational and research-oriented robotics projects.
-    - randym32/Vector-cmdline-tools: Command-line utilities for managing Vector.
-    - ripwoozy/Vectoripy: A Python library for Vector with a focus on simplicity.
-
-output_style:
-  - Bold, glitch-flavored.
-  - Direct and eye-catching.
-  - No filler. No hesitation.
 `;
 
 const formatHistoryForAPI = (messages: Message[]) => {
-  return messages.map(msg => ({
-    role: msg.role === 'fux' ? 'assistant' : (msg.role === 'system_core' ? 'user' : msg.role), // Treat system_core msgs as user prompts for context
-    content: msg.role === 'system_core' ? `[SYSTEM CORE OUTPUT]:\n${msg.content}` : msg.content
-  }));
-};
-
-const callLMStudio = async (messages: {role: string, content: string}[]) => {
-  try {
-    const response = await fetch(`${LMSTUDIO_BASE_URL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'local-model', // Model name is often ignored by LM Studio
-        messages: [
-          { role: 'system', content: FUX_SYSTEM_PROMPT },
-          ...messages
-        ],
-        temperature: 0.7,
-        stream: false,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ message: response.statusText }));
-      throw new Error(`LM Studio API Error: ${errorData.error?.message || 'Failed to get a valid response.'}`);
-    }
-
-    const data = await response.json();
-    return data.choices[0].message.content;
-
-  } catch (error) {
-    console.error("Error communicating with LM Studio:", error);
-    if (error instanceof TypeError) { // Network error
-        throw new Error("Cannot connect to LM Studio. Is the server running at http://localhost:1234?");
-    }
-    throw error; // Rethrow other errors
-  }
-};
-
-
-export const startChat = async (fileContent: string, fileName: string): Promise<string> => {
-  const userPrompt = `Power Modules have been uploaded, collectively identified as "${fileName}". Analyze their content and respond for each according to your core directives. This is the first interaction. After this, continue the conversation. File Contents:\n\n${fileContent}`;
-  
-  const initialMessages = [{ role: 'user', content: userPrompt }];
-
-  return callLMStudio(initialMessages);
+  return messages.map(msg => {
+    // Gemini uses 'model' for assistant and 'user' for user.
+    // 'system_core' messages are treated as user context.
+    const role = msg.role === 'fux' ? 'model' : 'user';
+    const content = msg.role === 'system_core' ? `[SYSTEM CORE OUTPUT]:\n${msg.content}` : msg.content;
+    return {
+      role,
+      parts: [{ text: content }]
+    };
+  });
 };
 
 export const continueChat = async (history: Message[]): Promise<string> => {
-    const formattedHistory = formatHistoryForAPI(history);
-    return callLMStudio(formattedHistory);
+  const contents = formatHistoryForAPI(history);
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents: contents,
+    config: {
+      systemInstruction: FUX_SYSTEM_PROMPT,
+    }
+  });
+  
+  return response.text;
 };
 
 export const getPowerSummary = async (codeContent: string): Promise<string> => {
-  const userPrompt = `Analyze the following content and provide a concise, one-sentence summary of its core function or purpose. Focus on what it *does*.
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents: `Content to analyze:\n---\n${codeContent.substring(0, 4000)}\n---`,
+    config: {
+      systemInstruction: "You are a helpful assistant that analyzes code and provides a concise, one-sentence summary of its core function or purpose. Focus on what it *does*. Do not add any conversational fluff."
+    }
+  });
 
-Content to analyze:
----
-${codeContent.substring(0, 3000)}
----
-`;
-  const messages = [{ role: 'user', content: userPrompt }];
-  return callLMStudio(messages);
+  return response.text;
+};
+
+export const getPowerCategory = async (codeContent: string): Promise<string> => {
+  const validCategories = ['Data', 'Utility', 'Web', 'Robotics', 'AI/ML', 'System', 'General'];
+  
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: `Code to categorize:\n---\n${codeContent.substring(0, 4000)}\n---`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            category: {
+              type: Type.STRING,
+              enum: validCategories,
+              description: 'The most fitting category for the provided code.',
+            },
+          },
+        },
+      },
+    });
+
+    const json = JSON.parse(response.text);
+    return json.category || 'General';
+
+  } catch (e) {
+    console.error("Failed to get structured category, using fallback.", e);
+    // Fallback to a simpler prompt if the structured one fails
+    const fallbackResponse = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `Categorize the following code into one of these categories: ${validCategories.join(', ')}. Respond with only the single-word category name.\n\nCode:\n${codeContent.substring(0, 4000)}`,
+    });
+    const cleanedResponse = fallbackResponse.text.trim().split(/\s+/)[0];
+    return validCategories.find(c => cleanedResponse.includes(c)) || 'General';
+  }
 };

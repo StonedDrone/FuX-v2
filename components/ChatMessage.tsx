@@ -68,8 +68,11 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage
       if (voice) {
         utterance.voice = voice;
       }
-      utterance.pitch = 0.8;
-      utterance.rate = 1.1;
+      
+      // Custom "VoiceMod" style voice profile
+      utterance.pitch = 0.1; // Lower pitch for a deeper, more robotic tone
+      utterance.rate = 1.0;  // Normal rate for clarity
+      utterance.volume = 1;  // Max volume
 
       window.speechSynthesis.speak(utterance);
     }
