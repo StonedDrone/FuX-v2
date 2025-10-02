@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage } from './ChatMessage';
 import { SendIcon } from './icons/SendIcon';
@@ -63,7 +64,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMe
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Engage with FuX..."
+            placeholder="Engage with FuX... try /ingest <repo_url>"
             rows={1}
             className="flex-1 bg-slate-800 border border-slate-600 rounded-lg p-2 text-slate-200 resize-none focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all"
             disabled={isReplying}
