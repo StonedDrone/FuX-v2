@@ -1,67 +1,99 @@
 import React, { useState, useEffect } from 'react';
 import { CloseIcon } from './icons/CloseIcon';
-import { PlugIcon } from './icons/PlugIcon';
+import { LinkedInIcon } from './icons/LinkedInIcon';
 import { authService } from '../services/authService';
 import { graphService } from '../services/microsoftGraphService';
+import { GithubIcon } from './icons/GithubIcon';
+import { InstagramIcon } from './icons/InstagramIcon';
+import { FacebookIcon } from './icons/FacebookIcon';
+import { KickIcon } from './icons/KickIcon';
+import { TwitchIcon } from './icons/TwitchIcon';
+import { XIcon } from './icons/XIcon';
+import { EyeIcon } from './icons/EyeIcon';
+import { EyeOffIcon } from './icons/EyeOffIcon';
+import { YouTubeIcon } from './icons/YouTubeIcon';
 
-// Simple inline SVG for X icon
-const XIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" {...props}>
-        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231L18.244 2.25zM17.5 19.5h1.5l-8.5-11.25h-1.5l8.5 11.25z" />
-    </svg>
-);
 
+interface ConnectionsPanelProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
 
-export const ConnectionsPanel: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen, onClose }) => {
+interface UserProfile {
+  displayName: string;
+  mail: string;
+}
+
+export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onClose }) => {
   // Microsoft Graph State
-  const [isMsConnected, setIsMsConnected] = useState(false);
-  const [userName, setUserName] = useState<string | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // X (Twitter) State
+  
+  // X API Key State
   const [xApiKey, setXApiKey] = useState('');
-  const [isXConnected, setIsXConnected] = useState(false);
+  const [isXApiKeySaved, setIsXApiKeySaved] = useState(false);
+  const [isXApiKeyVisible, setIsXApiKeyVisible] = useState(false);
 
+  // Load saved API key from localStorage on component mount
   useEffect(() => {
-    // Check for saved X API key on component mount
     const savedKey = localStorage.getItem('x_api_key');
     if (savedKey) {
-        setIsXConnected(true);
+      setXApiKey(savedKey);
+      setIsXApiKeySaved(true);
     }
   }, []);
 
-  const handleConnect = async () => {
+  useEffect(() => {
+    const account = authService.getAccount();
+    if (isOpen && account) {
+      handleGetUserProfile();
+    } else if (!isOpen) {
+      setUser(null);
+      setError(null);
+    }
+  }, [isOpen]);
+
+  const handleLogin = async () => {
     setIsLoading(true);
     setError(null);
     try {
       await authService.login();
-      const profile = await graphService.getUserProfile();
-      setUserName(profile.displayName);
-      setIsMsConnected(true);
-    } catch (err: any) {
-      setError(err.message || "Failed to connect.");
+      await handleGetUserProfile();
+    } catch (e: any) {
+      setError(e.message || 'Login failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
-
-  const handleDisconnect = async () => {
+  
+  const handleLogout = async () => {
     await authService.logout();
-    setIsMsConnected(false);
-    setUserName(null);
-  }
+    setUser(null);
+  };
 
+  const handleGetUserProfile = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const userProfile = await graphService.getUserProfile();
+      setUser(userProfile);
+    } catch (e: any) {
+      setError(e.message || 'Could not fetch user profile.');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+  
   const handleSaveXApiKey = () => {
-    if (xApiKey.trim() === '') return;
-    localStorage.setItem('x_api_key', xApiKey.trim());
-    setIsXConnected(true);
-    setXApiKey('');
+    localStorage.setItem('x_api_key', xApiKey);
+    setIsXApiKeySaved(true);
   };
 
   const handleClearXApiKey = () => {
     localStorage.removeItem('x_api_key');
-    setIsXConnected(false);
+    setXApiKey('');
+    setIsXApiKeySaved(false);
   };
 
   return (
@@ -72,86 +104,148 @@ export const ConnectionsPanel: React.FC<{ isOpen: boolean; onClose: () => void; 
         aria-hidden="true"
       />
       <div
-        className={`fixed top-0 left-0 h-full w-full max-w-sm bg-slate-900 border-r border-slate-700 shadow-lg z-50 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        className={`fixed top-0 right-0 h-full w-full max-w-sm bg-slate-900 border-l border-slate-700 shadow-lg z-50 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="connections-title"
       >
         <div className="flex justify-between items-center p-4 border-b border-slate-700">
-          <h2 id="connections-title" className="text-lg font-bold text-cyan-400">External Connections</h2>
-          <button onClick={onClose} className="p-1 rounded-full text-slate-400 hover:bg-slate-800 hover:text-cyan-400" aria-label="Close Connections Panel">
+          <h2 id="connections-title" className="text-lg font-bold text-cyan-400">Connections</h2>
+          <button onClick={onClose} className="p-1 rounded-full text-slate-400 hover:bg-slate-800 hover:text-cyan-400" aria-label="Close Connections">
             <CloseIcon className="w-6 h-6" />
           </button>
         </div>
-        <div className="p-4 space-y-4">
-          {/* Microsoft Graph Connection */}
-          <div className="p-3 rounded-lg bg-slate-800/50">
-            <div className="flex items-center justify-between">
-                <div className='flex items-center space-x-3'>
-                    <PlugIcon className="w-6 h-6 text-cyan-400" />
-                    <div>
-                        <p className="font-bold text-slate-100">Microsoft Graph</p>
-                        <p className="text-xs text-slate-400">Access calendar, email, and contacts.</p>
-                    </div>
+        <div className="p-6 overflow-y-auto h-[calc(100%-65px)] space-y-8">
+          
+          {/* Cloud Integrations */}
+          <div>
+            <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">Cloud Integrations</h3>
+            <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700">
+              <div className="flex justify-between items-center">
+                <p className="font-bold text-slate-100">Microsoft 365</p>
+                <div className={`w-3 h-3 rounded-full ${user ? 'bg-green-500' : 'bg-slate-500'}`}></div>
+              </div>
+              <p className="text-xs text-slate-400 mt-1 mb-4">Access your profile, files, and emails.</p>
+              {error && <p className="text-xs text-red-400 mb-3">{error}</p>}
+              {user ? (
+                <div>
+                  <p className="text-sm text-slate-300">Signed in as <span className="font-semibold text-cyan-400">{user.displayName}</span></p>
+                  <p className="text-xs text-slate-500">{user.mail}</p>
+                  <button 
+                    onClick={handleLogout}
+                    className="w-full mt-4 py-2 px-4 text-sm font-semibold rounded-md bg-rose-600/50 text-rose-200 hover:bg-rose-600/80 transition-colors"
+                  >
+                    Disconnect
+                  </button>
                 </div>
-                {isMsConnected ? (
-                     <button onClick={handleDisconnect} className="text-xs bg-red-800/80 hover:bg-red-700/80 text-red-200 px-3 py-1 rounded">Disconnect</button>
-                ) : (
-                    <button onClick={handleConnect} disabled={isLoading} className="text-xs bg-cyan-600 hover:bg-cyan-500 text-black px-3 py-1 rounded disabled:bg-slate-700 disabled:cursor-wait">
-                        {isLoading ? 'Connecting...' : 'Connect'}
-                    </button>
-                )}
-            </div>
-            <div className="mt-3 pt-3 border-t border-slate-700 text-xs text-slate-400">
-                Status: {isMsConnected 
-                    ? <span className="text-green-400 font-bold">Connected as {userName}</span> 
-                    : <span className="text-amber-400">Disconnected</span>
-                }
-                {error && <p className='text-red-400 mt-1'>{error}</p>}
+              ) : (
+                <button 
+                  onClick={handleLogin}
+                  disabled={isLoading}
+                  className="w-full py-2 px-4 text-sm font-semibold rounded-md bg-cyan-600/50 text-cyan-200 hover:bg-cyan-600/80 disabled:bg-slate-700 disabled:cursor-wait transition-colors"
+                >
+                  {isLoading ? 'Connecting...' : 'Connect'}
+                </button>
+              )}
             </div>
           </div>
           
-          {/* X (Twitter) Connection */}
-          <div className="p-3 rounded-lg bg-slate-800/50">
-            <div className="flex items-center justify-between">
-                <div className='flex items-center space-x-3'>
-                    <XIcon className="w-6 h-6 text-slate-300" />
-                    <div>
-                        <p className="font-bold text-slate-100">X (Twitter)</p>
-                        <p className="text-xs text-slate-400">Post updates to your profile.</p>
-                    </div>
-                </div>
-                {isXConnected && (
-                     <button onClick={handleClearXApiKey} className="text-xs bg-red-800/80 hover:bg-red-700/80 text-red-200 px-3 py-1 rounded">Clear Key</button>
-                )}
-            </div>
-            
-            {!isXConnected && (
-              <div className="mt-3 flex items-center space-x-2">
+          {/* API Keys */}
+          <div>
+            <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">API Keys</h3>
+            <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700">
+              <div className="flex justify-between items-center">
+                 <div className="flex items-center space-x-3">
+                    <XIcon className="w-5 h-5 text-slate-300"/>
+                    <p className="font-bold text-slate-100">X (Twitter)</p>
+                 </div>
+                <div className={`w-3 h-3 rounded-full ${isXApiKeySaved ? 'bg-green-500' : 'bg-slate-500'}`}></div>
+              </div>
+              <p className="text-xs text-slate-400 mt-1 mb-4">Provide an API key for X integration.</p>
+               <div className="relative flex items-center mb-3">
                 <input
-                    type="password"
-                    value={xApiKey}
-                    onChange={(e) => setXApiKey(e.target.value)}
-                    placeholder="Enter API Key..."
-                    className="flex-1 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                    aria-label="X (Twitter) API Key"
+                  type={isXApiKeyVisible ? 'text' : 'password'}
+                  value={xApiKey}
+                  onChange={(e) => setXApiKey(e.target.value)}
+                  placeholder="Enter your API key..."
+                  className="w-full bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 pr-10"
                 />
-                <button 
-                    onClick={handleSaveXApiKey}
-                    disabled={!xApiKey.trim()}
-                    className="text-xs bg-cyan-600 hover:bg-cyan-500 text-black px-3 py-1 rounded disabled:bg-slate-700 disabled:cursor-not-allowed">
-                    Save
+                <button
+                  onClick={() => setIsXApiKeyVisible(prev => !prev)}
+                  className="absolute right-2 text-slate-400 hover:text-slate-200"
+                  aria-label={isXApiKeyVisible ? 'Hide API key' : 'Show API key'}
+                >
+                  {isXApiKeyVisible ? <EyeOffIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
                 </button>
               </div>
-            )}
-            
-            <div className="mt-3 pt-3 border-t border-slate-700 text-xs text-slate-400">
-                Status: {isXConnected
-                    ? <span className="text-green-400 font-bold">API Key Saved</span> 
-                    : <span className="text-amber-400">Disconnected</span>
-                }
+              <div className="flex space-x-2">
+                <button 
+                  onClick={handleSaveXApiKey}
+                  disabled={!xApiKey}
+                  className="flex-1 py-2 px-4 text-sm font-semibold rounded-md bg-cyan-600/50 text-cyan-200 hover:bg-cyan-600/80 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-colors"
+                >
+                  Save
+                </button>
+                <button 
+                  onClick={handleClearXApiKey}
+                  disabled={!isXApiKeySaved}
+                  className="flex-1 py-2 px-4 text-sm font-semibold rounded-md bg-rose-600/50 text-rose-200 hover:bg-rose-600/80 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-colors"
+                >
+                  Clear
+                </button>
+              </div>
             </div>
           </div>
+
+          {/* Creator Network */}
+          <div>
+            <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">Creator Network</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <a href="https://www.linkedin.com/" target="_blank" rel="noopener noreferrer" className="flex items-center space-x-3 group p-3 rounded-lg bg-slate-800/50 border border-slate-700 hover:border-cyan-400 hover:bg-slate-800 transition-all">
+                <LinkedInIcon className="w-6 h-6 text-slate-400 group-hover:text-[#0A66C2] transition-colors" />
+                <div>
+                  <p className="font-bold text-sm text-slate-100">LinkedIn</p>
+                </div>
+              </a>
+              <a href="https://www.github.com/" target="_blank" rel="noopener noreferrer" className="flex items-center space-x-3 group p-3 rounded-lg bg-slate-800/50 border border-slate-700 hover:border-cyan-400 hover:bg-slate-800 transition-all">
+                <GithubIcon className="w-6 h-6 text-slate-400 group-hover:text-white transition-colors" />
+                <div>
+                  <p className="font-bold text-sm text-slate-100">GitHub</p>
+                </div>
+              </a>
+              <a href="https://www.instagram.com/" target="_blank" rel="noopener noreferrer" className="flex items-center space-x-3 group p-3 rounded-lg bg-slate-800/50 border border-slate-700 hover:border-cyan-400 hover:bg-slate-800 transition-all">
+                <InstagramIcon className="w-6 h-6 text-slate-400 group-hover:text-[#E1306C] transition-colors" />
+                <div>
+                  <p className="font-bold text-sm text-slate-100">Instagram</p>
+                </div>
+              </a>
+              <a href="https://www.facebook.com/" target="_blank" rel="noopener noreferrer" className="flex items-center space-x-3 group p-3 rounded-lg bg-slate-800/50 border border-slate-700 hover:border-cyan-400 hover:bg-slate-800 transition-all">
+                <FacebookIcon className="w-6 h-6 text-slate-400 group-hover:text-[#1877F2] transition-colors" />
+                <div>
+                  <p className="font-bold text-sm text-slate-100">Facebook</p>
+                </div>
+              </a>
+              <a href="https://www.twitch.tv/" target="_blank" rel="noopener noreferrer" className="flex items-center space-x-3 group p-3 rounded-lg bg-slate-800/50 border border-slate-700 hover:border-cyan-400 hover:bg-slate-800 transition-all">
+                <TwitchIcon className="w-6 h-6 text-slate-400 group-hover:text-[#9146FF] transition-colors" />
+                <div>
+                  <p className="font-bold text-sm text-slate-100">Twitch</p>
+                </div>
+              </a>
+              <a href="https://kick.com/" target="_blank" rel="noopener noreferrer" className="flex items-center space-x-3 group p-3 rounded-lg bg-slate-800/50 border border-slate-700 hover:border-cyan-400 hover:bg-slate-800 transition-all">
+                <KickIcon className="w-6 h-6 text-slate-400 group-hover:text-[#53FC18] transition-colors" />
+                <div>
+                  <p className="font-bold text-sm text-slate-100">Kick</p>
+                </div>
+              </a>
+              <a href="https://www.youtube.com/" target="_blank" rel="noopener noreferrer" className="flex items-center space-x-3 group p-3 rounded-lg bg-slate-800/50 border border-slate-700 hover:border-cyan-400 hover:bg-slate-800 transition-all">
+                <YouTubeIcon className="w-6 h-6 text-slate-400 group-hover:text-[#FF0000] transition-colors" />
+                <div>
+                  <p className="font-bold text-sm text-slate-100">YouTube</p>
+                </div>
+              </a>
+            </div>
+          </div>
+
         </div>
       </div>
     </>

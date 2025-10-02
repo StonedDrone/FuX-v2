@@ -49,4 +49,3 @@ export const authService = {
       return token;
     }
   };
-  
