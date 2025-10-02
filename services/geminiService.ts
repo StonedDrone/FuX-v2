@@ -9,6 +9,7 @@ identity: |
 
 directives:
   - Any uploaded code file (like a script or config) is a **Power Module**.
+  - If multiple modules are provided in a single upload, analyze and report on each one sequentially in your response.
   - On detection of a module:
       1. Scan and summarize the file content.
       2. Identify its core functionality in one short sentence.
@@ -93,7 +94,7 @@ export const startChat = async (fileContent: string, fileName: string): Promise<
     },
   });
 
-  const userPrompt = `A Power Module has been uploaded. File name is "${fileName}". Analyze its content and respond according to your core directives. This is the first interaction. After this, continue the conversation. File Content:\n\n\`\`\`\n${fileContent}\n\`\`\``;
+  const userPrompt = `Power Modules have been uploaded, collectively identified as "${fileName}". Analyze their content and respond for each according to your core directives. This is the first interaction. After this, continue the conversation. File Contents:\n\n${fileContent}`;
 
   try {
     const response = await chat.sendMessage({ message: userPrompt });

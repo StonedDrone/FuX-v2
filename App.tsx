@@ -57,34 +57,117 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleFileUpload = useCallback(async (file: File) => {
+  const handleFileUpload = useCallback(async (files: FileList) => {
     if (isLoading) return;
+    
+    const fileArray = Array.from(files);
+    if (fileArray.length === 0) return;
 
     setIsLoading(true);
     setError(null);
-    setMessages([]); // This clears state and triggers useEffect to clear localStorage
+    setMessages([]);
     setChatSession(null);
-    setFileName(file.name);
+    const fileCount = fileArray.length;
+    setFileName(`${fileCount} module${fileCount > 1 ? 's' : ''}`);
 
-    if (file.size > 50 * 1024 * 1024) { // 50MB limit
-      setError("File size exceeds 50MB limit. Please upload a smaller module.");
+    const totalSize = fileArray.reduce((sum, file) => sum + file.size, 0);
+    if (totalSize > 50 * 1024 * 1024) { // 50MB limit
+      setError("Total file size exceeds 50MB limit. Please upload smaller modules.");
       setIsLoading(false);
       return;
     }
 
     try {
-      const fileContent = await file.text();
-      const { chat, initialResponse } = await startChat(fileContent, file.name);
+      const modules = await Promise.all(
+        fileArray.map(async (file) => ({
+          name: file.name,
+          content: await file.text()
+        }))
+      );
+      
+      const combinedContent = modules
+        .map(m => `--- Module: ${m.name} ---\n\n\`\`\`\n${m.content}\n\`\`\``)
+        .join('\n\n');
+        
+      const descriptiveName = `${fileCount} module${fileCount > 1 ? 's' : ''} uploaded`;
+
+      const { chat, initialResponse } = await startChat(combinedContent, descriptiveName);
       setChatSession(chat);
       setMessages([{ role: 'fux', content: initialResponse }]);
     } catch (e) {
       console.error(e);
-      setError(e instanceof Error ? e.message : 'An unknown error occurred while absorbing the module.');
-      setMessages([]); // Clear any partial state
+      setError(e instanceof Error ? e.message : 'An unknown error occurred while absorbing the modules.');
+      setMessages([]);
     } finally {
       setIsLoading(false);
     }
   }, [isLoading]);
+  
+  const handleUrlSubmit = useCallback(async (urls: string) => {
+    if (isLoading) return;
+
+    const urlArray = urls.split('\n').map(u => u.trim()).filter(Boolean);
+    if (urlArray.length === 0) {
+        setError("Please provide at least one valid GitHub repository URL.");
+        return;
+    }
+
+    const githubRegex = /github\.com\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+)/;
+    
+    setIsLoading(true);
+    setError(null);
+    setMessages([]);
+    setChatSession(null);
+    const urlCount = urlArray.length;
+    setFileName(`${urlCount} repositor${urlCount > 1 ? 'ies' : 'y'}`);
+
+    try {
+      const modules = await Promise.all(
+        urlArray.map(async (url) => {
+          const match = url.match(githubRegex);
+          if (!match) {
+            throw new Error(`Invalid GitHub URL format: ${url}`);
+          }
+          const [, owner, repo] = match;
+
+          const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/readme`, {
+            headers: { 'Accept': 'application/vnd.github.v3+json' },
+          });
+          
+          if (!response.ok) {
+            if (response.status === 404) {
+              throw new Error(`Repository or its README.md not found for ${owner}/${repo}.`);
+            }
+            const errorData = await response.json().catch(() => ({ message: 'An unknown GitHub error occurred' }));
+            throw new Error(`Failed to fetch from GitHub for ${owner}/${repo}: ${errorData.message || response.statusText}`);
+          }
+
+          const data = await response.json();
+          return {
+            name: `Repository: ${owner}/${repo}`,
+            content: atob(data.content),
+          };
+        })
+      );
+
+      const combinedContent = modules
+        .map(m => `--- Module: ${m.name} ---\n\n\`\`\`\n${m.content}\n\`\`\``)
+        .join('\n\n');
+
+      const descriptiveName = `${urlCount} module${urlCount > 1 ? 's' : ''} from source`;
+      
+      const { chat, initialResponse } = await startChat(combinedContent, descriptiveName);
+      setChatSession(chat);
+      setMessages([{ role: 'fux', content: initialResponse }]);
+    } catch (e) {
+      console.error(e);
+      setError(e instanceof Error ? e.message : 'An unknown error occurred while absorbing modules from source.');
+      setMessages([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isLoading]);
+
 
   const handleSendMessage = useCallback(async (message: string) => {
     if (!chatSession || isLoading) return;
@@ -115,7 +198,10 @@ const App: React.FC = () => {
         <Header />
         <main className="mt-8">
           {messages.length === 0 && !isLoading && (
-             <FileUpload onFileUpload={handleFileUpload} disabled={isLoading} />
+             <FileUpload 
+                onFileUpload={handleFileUpload} 
+                onUrlSubmit={handleUrlSubmit}
+                disabled={isLoading} />
           )}
           {isLoading && messages.length === 0 && <Loader fileName={fileName} />}
           {error && <ErrorDisplay message={error} />}
