@@ -1,16 +1,31 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { Message } from '../App';
 
 interface ChatMessageProps {
   message: Message;
   isLastMessage: boolean;
+  isTtsEnabled: boolean;
 }
 
-export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage }) => {
+export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage, isTtsEnabled }) => {
   const { role, content } = message;
   const useTypewriter = role === 'fux' && isLastMessage;
   const [displayedText, setDisplayedText] = useState(useTypewriter ? '' : content);
+  const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
 
+  // Load voices once
+  useEffect(() => {
+    const loadVoices = () => {
+      voicesRef.current = window.speechSynthesis.getVoices();
+    };
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+    };
+  }, []);
+
+  // Typewriter effect
   useEffect(() => {
     if (useTypewriter) {
       setDisplayedText(''); // Reset on new message
@@ -28,6 +43,44 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage
         setDisplayedText(content);
     }
   }, [content, useTypewriter]);
+
+  // TTS effect
+  useEffect(() => {
+    if (useTypewriter && isTtsEnabled && content) {
+      // Cancel any previous utterance before speaking a new one
+      window.speechSynthesis.cancel();
+
+      const utterance = new SpeechSynthesisUtterance(content);
+      
+      // Find a suitable voice
+      const preferredVoices = [
+        'Google US English', // Chrome
+        'Microsoft David - English (United States)', // Edge/Windows
+        'Alex', // macOS (premium)
+        'Daniel', // UK English (often good quality)
+        'Samantha', // Common on many platforms
+      ];
+
+      const voice = voicesRef.current.find(v => preferredVoices.includes(v.name)) || 
+                    voicesRef.current.find(v => v.lang.startsWith('en-') && v.name.includes('Google')) ||
+                    voicesRef.current.find(v => v.lang.startsWith('en-'));
+      
+      if (voice) {
+        utterance.voice = voice;
+      }
+      utterance.pitch = 0.8;
+      utterance.rate = 1.1;
+
+      window.speechSynthesis.speak(utterance);
+    }
+
+    // Cleanup: stop speaking if component unmounts or is no longer the last message
+    return () => {
+      if (useTypewriter) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, [content, useTypewriter, isTtsEnabled]);
   
   const formatLine = (line: string) => {
     const parts = line.split(/:(.*)/s);

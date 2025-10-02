@@ -1,19 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage } from './ChatMessage';
 import { SendIcon } from './icons/SendIcon';
-
-type Message = {
-  role: 'user' | 'fux';
-  content: string;
-};
+import type { Message } from '../App';
 
 interface ChatInterfaceProps {
   messages: Message[];
   onSendMessage: (message: string) => void;
   isReplying: boolean;
+  isTtsEnabled: boolean;
 }
 
-export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, isReplying }) => {
+export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, isReplying, isTtsEnabled }) => {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<null | HTMLDivElement>(null);
 
@@ -46,6 +43,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMe
             key={index} 
             message={msg} 
             isLastMessage={index === messages.length - 1}
+            isTtsEnabled={isTtsEnabled}
           />
         ))}
         {isReplying && messages.length > 0 && messages[messages.length-1].role === 'user' && (

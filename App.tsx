@@ -12,6 +12,7 @@ export type Message = {
 };
 
 const CHAT_HISTORY_KEY = 'fux-chat-history';
+const TTS_ENABLED_KEY = 'fux-tts-enabled';
 
 // Web Worker code as a string to be sandboxed
 const workerCode = `
@@ -53,6 +54,13 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [isTtsEnabled, setIsTtsEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(TTS_ENABLED_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
   const workerRef = useRef<Worker | null>(null);
 
   const [messages, setMessages] = useState<Message[]>(() => {
@@ -76,6 +84,21 @@ const App: React.FC = () => {
       console.error("Could not save chat history to localStorage", e);
     }
   }, [messages]);
+  
+  useEffect(() => {
+    try {
+      localStorage.setItem(TTS_ENABLED_KEY, String(isTtsEnabled));
+    } catch (e) {
+      console.error("Could not save TTS preference to localStorage", e);
+    }
+  }, [isTtsEnabled]);
+
+  const handleToggleTts = () => {
+    if (!isTtsEnabled === false) {
+      window.speechSynthesis.cancel();
+    }
+    setIsTtsEnabled(prev => !prev);
+  };
 
   // Initialize Web Worker
   useEffect(() => {
@@ -99,6 +122,8 @@ const App: React.FC = () => {
     return () => {
       worker.terminate();
       URL.revokeObjectURL(workerUrl);
+       // Ensure speech stops on component unmount
+      window.speechSynthesis.cancel();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -122,6 +147,7 @@ const App: React.FC = () => {
   const handleFileUpload = useCallback(async (files: FileList) => {
     if (isLoading) return;
     
+    window.speechSynthesis.cancel();
     const fileArray = Array.from(files);
     if (fileArray.length === 0) return;
 
@@ -166,6 +192,7 @@ const App: React.FC = () => {
   const handleUrlSubmit = useCallback(async (urls: string) => {
     if (isLoading) return;
 
+    window.speechSynthesis.cancel();
     const urlArray = urls.split('\n').map(u => u.trim()).filter(Boolean);
     if (urlArray.length === 0) {
         setError("Please provide at least one valid GitHub repository URL.");
@@ -243,6 +270,7 @@ const App: React.FC = () => {
   const handleSendMessage = useCallback(async (message: string) => {
     if (isLoading) return;
 
+    window.speechSynthesis.cancel();
     const newMessages: Message[] = [...messages, { role: 'user', content: message }];
     setMessages(newMessages);
     setIsLoading(true);
@@ -264,7 +292,7 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-black text-slate-200 p-4 sm:p-6 lg:p-8 flex flex-col items-center">
       <div className="w-full max-w-4xl mx-auto">
-        <Header />
+        <Header isTtsEnabled={isTtsEnabled} onToggleTts={handleToggleTts} />
         <main className="mt-8">
           {messages.length === 0 && !isLoading && (
              <FileUpload 
@@ -279,6 +307,7 @@ const App: React.FC = () => {
               messages={messages} 
               onSendMessage={handleSendMessage}
               isReplying={isLoading}
+              isTtsEnabled={isTtsEnabled}
             />
           )}
         </main>
