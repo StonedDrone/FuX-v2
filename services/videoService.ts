@@ -1,3 +1,4 @@
+
 // This service handles communication with a video editing backend (e.g., OpenCut).
 // It allows the frontend to connect to a local video processing service.
 
@@ -48,7 +49,7 @@ class VideoService {
      * @param instructions Text-based instructions for the edit (e.g., "find the best clips").
      * @returns A result object indicating success and the output path.
      */
-    async autoCutVideo(sourceFile: string, instructions: string): Promise<{ message: string; outputPath: string }> {
+    async autoCutVideo(sourceFile: string, instructions: string): Promise<{ message: string; videoUrl: string }> {
         if (!this.connection) {
             throw new Error("Not connected to Video Service. Please connect in the Connections Panel.");
         }
@@ -72,10 +73,9 @@ class VideoService {
 
             // Simulate a successful API call
             await new Promise(resolve => setTimeout(resolve, 2000));
-            const mockOutputPath = sourceFile.replace(/(\.[\w\d_-]+)$/i, '_edited$1');
             return {
-                message: "Video processing task started.",
-                outputPath: mockOutputPath
+                message: "Video auto-cut and render completed.",
+                videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
             };
 
         } catch (error) {

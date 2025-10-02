@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import type { Message, AgentStep } from '../App';
 
@@ -115,6 +116,17 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage
           <pre className="whitespace-pre-wrap font-mono text-xs text-slate-300">
             {displayedText}
           </pre>
+           {message.videoUrl && (
+            <div className="mt-2 p-1 bg-slate-900/50 rounded-lg border border-slate-700">
+              <video
+                src={message.videoUrl}
+                controls
+                className="rounded-md max-w-full h-auto"
+              >
+                Your browser does not support the video tag.
+              </video>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -161,6 +173,17 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage
               alt={message.content}
               className="rounded-md max-w-full h-auto"
             />
+          </div>
+        )}
+        {message.videoUrl && (
+          <div className="mt-2 p-1 bg-slate-900/50 rounded-lg border border-slate-700">
+            <video
+              src={message.videoUrl}
+              controls
+              className="rounded-md max-w-full h-auto"
+            >
+              Your browser does not support the video tag.
+            </video>
           </div>
         )}
         {message.sources && message.sources.length > 0 && (

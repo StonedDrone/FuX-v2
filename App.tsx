@@ -28,6 +28,7 @@ export interface Message {
   role: 'fux' | 'user' | 'system_core';
   content: string;
   imageUrl?: string;
+  videoUrl?: string;
   sources?: GroundingChunk[];
   agentPlan?: AgentStep[];
 }
@@ -329,7 +330,7 @@ const App: React.FC = () => {
     throw new Error("Invalid vMix command or arguments.");
   };
 
-  const handleVideoCommand = async (args: string[]): Promise<string> => {
+  const handleVideoCommand = async (args: string[]): Promise<{ message: string; videoUrl: string }> => {
     const [subCommand, ...rest] = args;
     
     switch (subCommand?.toLowerCase()) {
@@ -340,7 +341,7 @@ const App: React.FC = () => {
                 const sourceFile = parts[0].trim();
                 const instructions = parts[1].trim();
                 const result = await videoService.autoCutVideo(sourceFile, instructions);
-                 return `Video command successful: ${result.message} Output at: ${result.outputPath}`;
+                 return result;
             }
             break;
         }
@@ -488,8 +489,12 @@ const App: React.FC = () => {
         if (powerName.toLowerCase() === 'video') {
             setCurrentTask(`Executing video command...`);
             try {
-                const resultMessage = await handleVideoCommand(powerArgs);
-                addMessage({ role: 'system_core', content: resultMessage });
+                const result = await handleVideoCommand(powerArgs);
+                addMessage({ 
+                  role: 'system_core', 
+                  content: `Video command successful: ${result.message}`,
+                  videoUrl: result.videoUrl
+                });
             } catch (e: any) {
                 addMessage({ role: 'system_core', content: `Video command failed: ${e.message}` });
             }
@@ -620,8 +625,12 @@ const App: React.FC = () => {
                 break;
               case 'video':
                 const videoResult = await handleVideoCommand(resolvedArgs.split(/\s+/));
-                currentStepOutput = videoResult;
-                addMessage({ role: 'system_core', content: videoResult });
+                currentStepOutput = videoResult.videoUrl;
+                addMessage({ 
+                    role: 'system_core', 
+                    content: `Video command successful: ${videoResult.message}`,
+                    videoUrl: videoResult.videoUrl 
+                });
                 break;
               case 'spotify':
                 const spotifyResult = await handleSpotifyCommand(resolvedArgs.split(/\s+/));
