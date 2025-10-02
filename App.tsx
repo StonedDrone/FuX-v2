@@ -9,6 +9,7 @@ import { analyzeCode, executeCode, generateImage, googleSearch } from './service
 import { GoogleGenAI, LiveServerMessage, Modality, Blob } from '@google/genai';
 import { encode, decode, decodeAudioData } from './utils/audioUtils';
 import { vmixService } from './services/vmixService';
+import { blenderService } from './services/blenderService';
 
 interface GroundingChunk {
   web?: {
@@ -254,7 +255,7 @@ const App: React.FC = () => {
     
     switch (cmd) {
       case '/help':
-        addMessage({ role: 'fux', content: 'Available Commands:\n/help - Show this message\n/ingest <source> - Ingest a new Power Module\n/powers - List ingested Power Modules\n/use <power_name> <...args> - Use a Power Module\n/generate image <prompt> - Create an image from a text description\n/search <query> - Get a web-grounded answer to a query' });
+        addMessage({ role: 'fux', content: 'Available Commands:\n/help - Show this message\n/ingest <source> - Ingest a new Power Module\n/powers - List ingested Power Modules\n/use <module> [args] - Use a Power Module (e.g. vmix, blender)\n/generate image <prompt> - Create an image from a text description\n/search <query> - Get a web-grounded answer to a query' });
         break;
       case '/ingest':
         // Mock ingestion
@@ -296,6 +297,25 @@ const App: React.FC = () => {
             }
           } else {
             addMessage({ role: 'fux', content: "Invalid vMix command. Supported format: /use vmix switch input <input_number_or_name>" });
+          }
+          break;
+        }
+        
+        if (powerName.toLowerCase() === 'blender') {
+          const script = powerArgs.join(' ');
+          if (!script) {
+            addMessage({ role: 'fux', content: 'Please provide a Python script to execute. Usage: /use blender <script>' });
+            break;
+          }
+          setCurrentTask(`Executing Blender script...`);
+          try {
+            const result = await blenderService.runScript(script);
+            addMessage({
+              role: 'system_core',
+              content: `Blender script executed successfully. Result:\n${JSON.stringify(result, null, 2)}`
+            });
+          } catch (e: any) {
+            addMessage({ role: 'system_core', content: `Blender script execution failed: ${e.message}` });
           }
           break;
         }
