@@ -1,315 +1,323 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { FileUpload } from './components/FileUpload';
 import { Loader } from './components/Loader';
-import { startChat, continueChat } from './services/geminiService';
+import { continueChat } from './services/geminiService';
 import { Header } from './components/Header';
 import { ErrorDisplay } from './components/ErrorDisplay';
 import { ChatInterface } from './components/ChatInterface';
+import { openDB, DBSchema } from 'idb';
 
 export type Message = {
   role: 'user' | 'fux' | 'system_core';
   content: string;
 };
 
-const CHAT_HISTORY_KEY = 'fux-chat-history';
-const TTS_ENABLED_KEY = 'fux-tts-enabled';
-
-// Web Worker code as a string to be sandboxed
-const workerCode = `
-self.onmessage = (event) => {
-  const code = event.data;
-  const logs = [];
-  const originalLog = console.log;
-  console.log = (...args) => {
-    try {
-      logs.push(args.map(arg => JSON.stringify(arg, null, 2)).join(' '));
-    } catch (e) {
-      logs.push('<<Unserializable Log>>');
-    }
-    originalLog.apply(console, args);
-  };
-
-  try {
-    const result = new Function(code)();
-    let output = logs.join('\\n');
-    if (result !== undefined) {
-      try {
-        output += \`\\n---\\nReturn Value: \${JSON.stringify(result, null, 2)}\`;
-      } catch (e) {
-        output += \`\\n---\\nReturn Value: <<Unserializable>>\`;
-      }
-    }
-    self.postMessage({ type: 'success', output: output || 'Execution finished with no output.' });
-  } catch (error) {
-    let output = logs.join('\\n');
-    output += \`\\n---\\nError: \${error.message}\`;
-    self.postMessage({ type: 'error', output });
-  } finally {
-    console.log = originalLog;
+// --- TypeScript Declarations ---
+declare global {
+  interface Window {
+    loadPyodide: (config?: any) => Promise<any>;
   }
-};
-`;
+}
 
+interface FuXDB extends DBSchema {
+  'key-val': {
+    key: string;
+    value: any;
+  };
+  'plugins': {
+    key: string;
+    value: any;
+  }
+}
+
+// --- IndexedDB Service ---
+const dbPromise = openDB<FuXDB>('fux-arsenal-db', 1, {
+  upgrade(db) {
+    db.createObjectStore('key-val');
+    db.createObjectStore('plugins');
+  },
+});
+
+const db = {
+  get: async (store: 'key-val' | 'plugins', key: string) => (await dbPromise).get(store, key),
+  set: async (store: 'key-val' | 'plugins', key: string, val: any) => (await dbPromise).put(store, val, key),
+  keys: async (store: 'key-val' | 'plugins') => (await dbPromise).getAllKeys(store),
+};
+
+
+// --- Main App Component ---
 const App: React.FC = () => {
+  const [pyodide, setPyodide] = useState<any>(null);
+  const [pyodideLoading, setPyodideLoading] = useState(true);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [isTtsEnabled, setIsTtsEnabled] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(TTS_ENABLED_KEY) === 'true';
-    } catch {
-      return false;
-    }
-  });
-  const workerRef = useRef<Worker | null>(null);
+  const [isTtsEnabled, setIsTtsEnabled] = useState<boolean>(() => localStorage.getItem('fux-tts-enabled') === 'true');
+  const [messages, setMessages] = useState<Message[]>([]);
 
-  const [messages, setMessages] = useState<Message[]>(() => {
-    try {
-      const saved = localStorage.getItem(CHAT_HISTORY_KEY);
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      console.error("Could not load chat history from localStorage", e);
-      return [];
-    }
-  });
-
+  // Effect for Pyodide initialization
   useEffect(() => {
-    try {
-      if (messages.length > 0) {
-        localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(messages));
-      } else {
-        localStorage.removeItem(CHAT_HISTORY_KEY);
+    const loadPyodideInstance = async () => {
+      try {
+        const pyodideInstance = await window.loadPyodide();
+        await pyodideInstance.loadPackage("micropip");
+        setPyodide(pyodideInstance);
+      } catch (e) {
+        console.error("Pyodide loading failed:", e);
+        setError("Fatal Error: Could not initialize execution engine. Refresh to try again.");
+      } finally {
+        setPyodideLoading(false);
       }
-    } catch (e) {
-      console.error("Could not save chat history to localStorage", e);
-    }
-  }, [messages]);
+    };
+    loadPyodideInstance();
+  }, []);
   
+  // Effect for TTS preference
   useEffect(() => {
-    try {
-      localStorage.setItem(TTS_ENABLED_KEY, String(isTtsEnabled));
-    } catch (e) {
-      console.error("Could not save TTS preference to localStorage", e);
-    }
+    localStorage.setItem('fux-tts-enabled', String(isTtsEnabled));
   }, [isTtsEnabled]);
 
   const handleToggleTts = () => {
-    if (!isTtsEnabled === false) {
+    if (isTtsEnabled) {
       window.speechSynthesis.cancel();
     }
     setIsTtsEnabled(prev => !prev);
   };
-
-  // Initialize Web Worker
-  useEffect(() => {
-    const blob = new Blob([workerCode], { type: 'application/javascript' });
-    const workerUrl = URL.createObjectURL(blob);
-    const worker = new Worker(workerUrl);
-    workerRef.current = worker;
-
-    worker.onmessage = (event) => {
-      const { type, output } = event.data;
-      const systemMessage: Message = {
-        role: 'system_core',
-        content: `Execution Result (${type}):\n${output}`
-      };
-      setMessages(prev => [...prev, systemMessage]);
-
-      // Feed the result back to the AI
-      continueChain(systemMessage);
-    };
-
-    return () => {
-      worker.terminate();
-      URL.revokeObjectURL(workerUrl);
-       // Ensure speech stops on component unmount
-      window.speechSynthesis.cancel();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const processResponse = (response: string) => {
-    const codeRegex = /```javascript-exec\s*([\s\S]*?)```/;
-    const match = response.match(codeRegex);
-
-    if (match && match[1] && workerRef.current) {
-        const code = match[1];
-        const fuxMessage: Message = { role: 'fux', content: "Initializing self-enhancement protocol..." };
-        setMessages(prev => [...prev, fuxMessage]);
-        workerRef.current.postMessage(code);
-    } else {
-        const fuxMessage: Message = { role: 'fux', content: response };
-        setMessages(prev => [...prev, fuxMessage]);
-        setIsLoading(false);
-    }
+  
+  const addSystemMessage = (content: string) => {
+    const systemMessage: Message = { role: 'system_core', content };
+    setMessages(prev => [...prev, systemMessage]);
   };
 
-  const handleFileUpload = useCallback(async (files: FileList) => {
-    if (isLoading) return;
-    
-    window.speechSynthesis.cancel();
-    const fileArray = Array.from(files);
-    if (fileArray.length === 0) return;
-
+  const addFuxMessage = (content: string) => {
+    const fuxMessage: Message = { role: 'fux', content };
+    setMessages(prev => [...prev, fuxMessage]);
+  };
+  
+  // --- Command Handlers ---
+  const handleIngestCommand = useCallback(async (url: string) => {
     setIsLoading(true);
-    setError(null);
-    setMessages([]);
-    const fileCount = fileArray.length;
-    setFileName(`${fileCount} module${fileCount > 1 ? 's' : ''}`);
-
-    const totalSize = fileArray.reduce((sum, file) => sum + file.size, 0);
-    if (totalSize > 50 * 1024 * 1024) { // 50MB limit
-      setError("Total file size exceeds 50MB limit. Please upload smaller modules.");
-      setIsLoading(false);
-      return;
-    }
+    addSystemMessage(`Ingesting from ${url}...`);
 
     try {
-      const modules = await Promise.all(
-        fileArray.map(async (file) => ({
-          name: file.name,
-          content: await file.text()
-        }))
-      );
-      
-      const combinedContent = modules
-        .map(m => `--- Module: ${m.name} ---\n\n\`\`\`\n${m.content}\n\`\`\``)
-        .join('\n\n');
-        
-      const descriptiveName = `${fileCount} module${fileCount > 1 ? 's' : ''} uploaded`;
+      const githubRegex = /github\.com\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+)/;
+      const match = url.match(githubRegex);
+      if (!match) throw new Error("Invalid GitHub repository URL.");
 
-      const initialResponse = await startChat(combinedContent, descriptiveName);
-      processResponse(initialResponse);
+      const [, owner, repo] = match;
+      const repoName = repo.replace(/\.git$/, '');
+
+      const treeResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/main?recursive=1`);
+      if (!treeResponse.ok) throw new Error(`Could not fetch repository tree. Is it a public repository?`);
+      const treeData = await treeResponse.json();
+
+      if (treeData.truncated) {
+        addSystemMessage("Warning: Repository is too large, some files may have been omitted.");
+      }
+
+      const filePromises = treeData.tree
+        .filter((item: any) => item.type === 'blob')
+        .map(async (item: any) => {
+            const res = await fetch(item.url);
+            if (!res.ok) throw new Error(`Failed to fetch ${item.path}`);
+            const blobData = await res.json();
+            return {
+                path: item.path,
+                content: atob(blobData.content),
+            };
+        });
+
+      const files = await Promise.all(filePromises);
+      await db.set('plugins', repoName.toLowerCase(), files);
+
+      let index = await db.get('key-val', 'core_index') || {};
+      index[repoName.toLowerCase()] = {
+          power_name: repoName,
+          source: url,
+          ingested_at: new Date().toISOString()
+      };
+      await db.set('key-val', 'core_index', index);
+
+      addSystemMessage(`✅ Ingestion complete. Stored "${repoName}" as a new Power Module.`);
 
     } catch (e) {
-      console.error(e);
-      setError(e instanceof Error ? e.message : 'An unknown error occurred while absorbing the modules.');
-      setMessages([]);
+      const errorMessage = e instanceof Error ? e.message : "An unknown error occurred during ingestion.";
+      setError(errorMessage);
+      addSystemMessage(`❌ Ingestion failed: ${errorMessage}`);
+    } finally {
       setIsLoading(false);
     }
-  }, [isLoading]);
+  }, []);
   
-  const handleUrlSubmit = useCallback(async (urls: string) => {
-    if (isLoading) return;
-
-    window.speechSynthesis.cancel();
-    const urlArray = urls.split('\n').map(u => u.trim()).filter(Boolean);
-    if (urlArray.length === 0) {
-        setError("Please provide at least one valid GitHub repository URL.");
+  const handleRunCommand = useCallback(async (powerName: string, args: string[]) => {
+    if (!pyodide) {
+        setError("Execution engine is not ready.");
         return;
     }
-
-    const githubRegex = /github\.com\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+)/;
-    
     setIsLoading(true);
-    setError(null);
-    setMessages([]);
-    const urlCount = urlArray.length;
-    setFileName(`${urlCount} repositor${urlCount > 1 ? 'ies' : 'y'}`);
+    addSystemMessage(`Executing Power Module: ${powerName} with args: [${args.join(', ')}]`);
 
     try {
-      const modules = await Promise.all(
-        urlArray.map(async (url) => {
-          const match = url.match(githubRegex);
-          if (!match) {
-            throw new Error(`Invalid GitHub URL format: ${url}`);
-          }
-          const [, owner, repo] = match;
+        const index = await db.get('key-val', 'core_index');
+        if (!index || !index[powerName.toLowerCase()]) {
+            throw new Error(`Power Module "${powerName}" not found. Use /list to see available modules.`);
+        }
 
-          const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/readme`, {
-            headers: { 'Accept': 'application/vnd.github.v3+json' },
-          });
-          
-          if (!response.ok) {
-            if (response.status === 404) {
-              throw new Error(`Repository or its README.md not found for ${owner}/${repo}.`);
+        const files = await db.get('plugins', powerName.toLowerCase());
+        if (!files) {
+            throw new Error(`Could not retrieve files for "${powerName}".`);
+        }
+        
+        // Write files to virtual FS
+        files.forEach((file: {path: string, content: string}) => {
+            const pathParts = file.path.split('/');
+            if (pathParts.length > 1) {
+                const dir = pathParts.slice(0, -1).join('/');
+                pyodide.FS.mkdirTree(dir);
             }
-            const errorData = await response.json().catch(() => ({ message: 'An unknown GitHub error occurred' }));
-            throw new Error(`Failed to fetch from GitHub for ${owner}/${repo}: ${errorData.message || response.statusText}`);
-          }
+            pyodide.FS.writeFile(file.path, file.content);
+        });
 
-          const data = await response.json();
-          return {
-            name: `Repository: ${owner}/${repo}`,
-            content: atob(data.content),
-          };
-        })
-      );
+        // Handle requirements.txt
+        const reqFile = files.find((f: any) => f.path === 'requirements.txt');
+        if (reqFile) {
+            addSystemMessage("Found requirements.txt. Installing dependencies...");
+            const micropip = pyodide.pkg.micropip;
+            const requirements = reqFile.content.split('\n').filter((req: string) => req.trim() && !req.trim().startsWith('#'));
+            if (requirements.length > 0) {
+              await micropip.install(requirements);
+              addSystemMessage("Dependencies installed.");
+            }
+        }
+        
+        // Find entry point
+        const entryPoints = [`main.py`, `app.py`, `${powerName.toLowerCase()}.py`];
+        const entryPoint = files.find((f: any) => entryPoints.includes(f.path));
+        if (!entryPoint) {
+            throw new Error(`No entry point (e.g., main.py, app.py) found for "${powerName}".`);
+        }
+        addSystemMessage(`Found entry point: ${entryPoint.path}. Executing...`);
 
-      const combinedContent = modules
-        .map(m => `--- Module: ${m.name} ---\n\n\`\`\`\n${m.content}\n\`\`\``)
-        .join('\n\n');
+        // Execute script
+        const pythonCode = `
+import sys
+import io
 
-      const descriptiveName = `${urlCount} module${urlCount > 1 ? 's' : ''} from source`;
-      
-      const initialResponse = await startChat(combinedContent, descriptiveName);
-      processResponse(initialResponse);
+# Redirect stdout
+sys.stdout = io.StringIO()
+sys.stderr = io.StringIO()
+
+# Add script args
+sys.argv = ['${entryPoint.path}', *${JSON.stringify(args)}]
+
+try:
+    with open('${entryPoint.path}', 'r') as f:
+        code = f.read()
+    exec(code, {'__name__': '__main__'})
+except Exception as e:
+    print(f"--- EXECUTION ERROR ---", file=sys.stderr)
+    print(e, file=sys.stderr)
+
+# Get output
+stdout_val = sys.stdout.getvalue()
+stderr_val = sys.stderr.getvalue()
+
+# Combine outputs
+stdout_val + stderr_val
+        `;
+        
+        const output = await pyodide.runPythonAsync(pythonCode);
+        addSystemMessage(`--- Output from ${entryPoint.path} ---\n${output || "[No output]"}`);
+
     } catch (e) {
-      console.error(e);
-      setError(e instanceof Error ? e.message : 'An unknown error occurred while absorbing modules from source.');
-      setMessages([]);
-      setIsLoading(false);
-    }
-  }, [isLoading]);
-
-  // Continues the chain of conversation, used for system-generated messages.
-  const continueChain = async (systemMessage: Message) => {
-    const currentMessages = [...messages, systemMessage];
-    try {
-      const responseText = await continueChat(currentMessages);
-      processResponse(responseText);
-    } catch (e) {
-        console.error(e);
-        const errorMessage = e instanceof Error ? e.message : 'An error occurred during the chat session.';
+        const errorMessage = e instanceof Error ? e.message : "An unknown error occurred during execution.";
         setError(errorMessage);
+        addSystemMessage(`❌ Execution failed: ${errorMessage}`);
+    } finally {
         setIsLoading(false);
     }
-  }
+  }, [pyodide]);
 
+  const handleListCommand = useCallback(async () => {
+    const index = await db.get('key-val', 'core_index') || {};
+    const powers = Object.values(index);
+    if (powers.length === 0) {
+        addSystemMessage("No Power Modules have been ingested yet.");
+    } else {
+        const powerList = powers.map((p: any) => `- ${p.power_name} (from: ${p.source})`).join('\n');
+        addSystemMessage(`Available Power Modules:\n${powerList}`);
+    }
+  }, []);
+  
+  const handleHelpCommand = useCallback(async () => {
+    const helpText = `Available Commands:
+- /ingest <github_url>: Ingest a new Power Module from a GitHub repo.
+- /run <power_name> [args...]: Execute an ingested Power Module.
+- /list: Show all ingested Power Modules.
+- /help: Display this help message.`;
+    addSystemMessage(helpText);
+  }, []);
 
   const handleSendMessage = useCallback(async (message: string) => {
-    if (isLoading) return;
+    if (isLoading || pyodideLoading) return;
 
     window.speechSynthesis.cancel();
     const newMessages: Message[] = [...messages, { role: 'user', content: message }];
     setMessages(newMessages);
-    setIsLoading(true);
     setError(null);
 
-    try {
-      const responseText = await continueChat(newMessages);
-      processResponse(responseText);
-    } catch (e) {
-      console.error(e);
-      const errorMessage = e instanceof Error ? e.message : 'An error occurred during the chat session.';
-      setError(errorMessage);
-      setMessages(newMessages); // Keep user message on error
-      setIsLoading(false);
+    if (message.startsWith('/')) {
+        const [command, ...args] = message.trim().split(/\s+/);
+        switch (command) {
+            case '/ingest':
+                if (args.length > 0) await handleIngestCommand(args[0]);
+                else addSystemMessage("Usage: /ingest <github_url>");
+                break;
+            case '/run':
+                if (args.length > 0) await handleRunCommand(args[0], args.slice(1));
+                else addSystemMessage("Usage: /run <power_name> [args...]");
+                break;
+            case '/list':
+                await handleListCommand();
+                break;
+            case '/help':
+                await handleHelpCommand();
+                break;
+            default:
+                addSystemMessage(`Unknown command: ${command}`);
+                break;
+        }
+    } else {
+        setIsLoading(true);
+        try {
+            const responseText = await continueChat(newMessages);
+            addFuxMessage(responseText);
+        } catch (e) {
+            const errorMessage = e instanceof Error ? e.message : 'An error occurred during the chat session.';
+            setError(errorMessage);
+        } finally {
+            setIsLoading(false);
+        }
     }
-  }, [isLoading, messages]);
+  }, [isLoading, messages, pyodideLoading, handleIngestCommand, handleRunCommand, handleListCommand, handleHelpCommand]);
 
+
+  if (pyodideLoading) {
+    return <div className="fixed inset-0 bg-black flex flex-col items-center justify-center">
+      <Loader fileName="Execution Engine..." />
+    </div>;
+  }
 
   return (
     <div className="min-h-screen bg-black text-slate-200 p-4 sm:p-6 lg:p-8 flex flex-col items-center">
       <div className="w-full max-w-4xl mx-auto">
         <Header isTtsEnabled={isTtsEnabled} onToggleTts={handleToggleTts} />
         <main className="mt-8">
-          {messages.length === 0 && !isLoading && (
-             <FileUpload 
-                onFileUpload={handleFileUpload} 
-                onUrlSubmit={handleUrlSubmit}
-                disabled={isLoading} />
-          )}
-          {isLoading && messages.length === 0 && <Loader fileName={fileName} />}
           {error && <ErrorDisplay message={error} />}
-          {messages.length > 0 && (
-            <ChatInterface 
-              messages={messages} 
-              onSendMessage={handleSendMessage}
-              isReplying={isLoading}
-              isTtsEnabled={isTtsEnabled}
-            />
-          )}
+          <ChatInterface 
+            messages={messages} 
+            onSendMessage={handleSendMessage}
+            isReplying={isLoading}
+            isTtsEnabled={isTtsEnabled}
+          />
         </main>
       </div>
     </div>

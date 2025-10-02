@@ -19,7 +19,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMe
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  useEffect(scrollToBottom, [messages]);
+  useEffect(() => {
+    // A slight delay to allow the DOM to update before scrolling
+    setTimeout(scrollToBottom, 100);
+  }, [messages]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,7 +50,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMe
             isTtsEnabled={isTtsEnabled}
           />
         ))}
-        {isReplying && messages.length > 0 && messages[messages.length-1].role === 'user' && (
+        {isReplying && messages[messages.length-1]?.role !== 'fux' && (
           <div className="flex justify-start">
              <div className="flex items-center space-x-2 p-4">
                 <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
@@ -64,10 +67,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMe
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Engage with FuX... try /ingest <repo_url>"
+            placeholder="Engage with FuX... try /ingest, /run, /list"
             rows={1}
             className="flex-1 bg-slate-800 border border-slate-600 rounded-lg p-2 text-slate-200 resize-none focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all"
             disabled={isReplying}
+            autoFocus
           />
           <button
             type="submit"
