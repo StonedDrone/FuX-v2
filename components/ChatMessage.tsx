@@ -7,6 +7,13 @@ interface ChatMessageProps {
   isTtsEnabled: boolean;
 }
 
+const LinkIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
+  </svg>
+);
+
+
 export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage, isTtsEnabled }) => {
   const { role, content } = message;
   const useTypewriter = role === 'fux' && isLastMessage;
@@ -130,6 +137,38 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage
             </React.Fragment>
           ))}
         </pre>
+        {message.imageUrl && (
+          <div className="mt-2 p-1 bg-slate-900/50 rounded-lg border border-slate-700">
+            <img
+              src={message.imageUrl}
+              alt={message.content}
+              className="rounded-md max-w-full h-auto"
+            />
+          </div>
+        )}
+        {message.sources && message.sources.length > 0 && (
+          <div className="mt-4 pt-3 border-t border-slate-700">
+            <h4 className="text-xs text-slate-400 font-bold mb-2 flex items-center">
+              <LinkIcon className="w-4 h-4 mr-2" />
+              SOURCES
+            </h4>
+            <ul className="space-y-2">
+              {message.sources.map((source, index) => source.web && (
+                <li key={index}>
+                  <a 
+                    href={source.web.uri} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="block p-2 rounded-md bg-slate-900/50 hover:bg-slate-900/80 border border-slate-700 hover:border-cyan-500 transition-all"
+                  >
+                    <p className="text-sm text-cyan-400 font-semibold truncate">{source.web.title}</p>
+                    <p className="text-xs text-slate-500 truncate mt-1">{source.web.uri}</p>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );

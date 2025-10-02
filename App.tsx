@@ -5,13 +5,23 @@ import { PluginRegistry } from './components/PluginRegistry';
 import { Hud } from './components/Hud';
 import { ConnectionsPanel } from './components/ConnectionsPanel';
 import { ErrorDisplay } from './components/ErrorDisplay';
-import { analyzeCode, executeCode } from './services/geminiService';
+import { analyzeCode, executeCode, generateImage, googleSearch } from './services/geminiService';
 import { GoogleGenAI, LiveServerMessage, Modality, Blob } from '@google/genai';
 import { encode, decode, decodeAudioData } from './utils/audioUtils';
+import { vmixService } from './services/vmixService';
+
+interface GroundingChunk {
+  web?: {
+    uri: string;
+    title: string;
+  };
+}
 
 export interface Message {
   role: 'fux' | 'user' | 'system_core';
   content: string;
+  imageUrl?: string;
+  sources?: GroundingChunk[];
 }
 
 interface Plugin {
@@ -244,7 +254,7 @@ const App: React.FC = () => {
     
     switch (cmd) {
       case '/help':
-        addMessage({ role: 'fux', content: 'Available Commands:\n/help - Show this message\n/ingest <source> - Ingest a new Power Module\n/powers - List ingested Power Modules\n/use <power_name> <...args> - Use a Power Module' });
+        addMessage({ role: 'fux', content: 'Available Commands:\n/help - Show this message\n/ingest <source> - Ingest a new Power Module\n/powers - List ingested Power Modules\n/use <power_name> <...args> - Use a Power Module\n/generate image <prompt> - Create an image from a text description\n/search <query> - Get a web-grounded answer to a query' });
         break;
       case '/ingest':
         // Mock ingestion
@@ -268,12 +278,76 @@ const App: React.FC = () => {
             addMessage({ role: 'fux', content: 'Please specify a Power Module to use. Usage: /use <power_name> <...args>' });
             break;
         }
+        
+        if (powerName.toLowerCase() === 'vmix') {
+          if (powerArgs.length === 3 && powerArgs[0].toLowerCase() === 'switch' && powerArgs[1].toLowerCase() === 'input') {
+            const inputId = powerArgs[2];
+            if (inputId) {
+              setCurrentTask(`Executing vMix command: Switch to input ${inputId}`);
+              try {
+                // 'Cut' is an instant switch in vMix.
+                await vmixService.sendCommand('Cut', { Input: inputId });
+                addMessage({ role: 'system_core', content: `vMix command successful: Switched to input ${inputId}` });
+              } catch (e: any) {
+                addMessage({ role: 'system_core', content: `vMix command failed: ${e.message}` });
+              }
+            } else {
+              addMessage({ role: 'fux', content: `Invalid input provided. Usage: /use vmix switch input <input_number_or_name>` });
+            }
+          } else {
+            addMessage({ role: 'fux', content: "Invalid vMix command. Supported format: /use vmix switch input <input_number_or_name>" });
+          }
+          break;
+        }
+
         setCurrentTask(`Executing Power Module: ${powerName}`);
         try {
             const result = await executeCode(powerName, powerArgs);
             addMessage({ role: 'system_core', content: `Execution Result from ${powerName}:\n${result}` });
         } catch (e: any) {
             addMessage({ role: 'system_core', content: `Execution failed for ${powerName}: ${e.message}` });
+        }
+        break;
+      case '/generate':
+        const [subCmd, ...imagePromptParts] = args;
+        if (subCmd?.toLowerCase() === 'image') {
+          const prompt = imagePromptParts.join(' ');
+          if (!prompt) {
+            addMessage({ role: 'fux', content: 'Please provide a prompt for the image. Usage: /generate image <your prompt>' });
+            break;
+          }
+          setCurrentTask(`Generating image: "${prompt}"`);
+          try {
+            const base64Image = await generateImage(prompt);
+            const imageUrl = `data:image/png;base64,${base64Image}`;
+            addMessage({
+              role: 'fux',
+              content: `Image generated for: "${prompt}"`,
+              imageUrl: imageUrl,
+            });
+          } catch (e: any) {
+            addMessage({ role: 'system_core', content: `Image generation failed: ${e.message}` });
+          }
+        } else {
+          addMessage({ role: 'fux', content: "Unknown /generate command. Did you mean '/generate image <prompt>'?" });
+        }
+        break;
+      case '/search':
+        const query = args.join(' ');
+        if (!query) {
+            addMessage({ role: 'fux', content: 'Please provide a search query. Usage: /search <your query>' });
+            break;
+        }
+        setCurrentTask(`Searching web for: "${query}"`);
+        try {
+            const result = await googleSearch(query);
+            addMessage({
+                role: 'fux',
+                content: result.text,
+                sources: result.sources,
+            });
+        } catch (e: any) {
+            addMessage({ role: 'system_core', content: `Search failed: ${e.message}` });
         }
         break;
       default:

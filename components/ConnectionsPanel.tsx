@@ -3,6 +3,8 @@ import { CloseIcon } from './icons/CloseIcon';
 import { LinkedInIcon } from './icons/LinkedInIcon';
 import { authService } from '../services/authService';
 import { graphService } from '../services/microsoftGraphService';
+import { vmixService } from '../services/vmixService';
+import { blenderService } from '../services/blenderService';
 import { GithubIcon } from './icons/GithubIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
 import { FacebookIcon } from './icons/FacebookIcon';
@@ -12,6 +14,8 @@ import { XIcon } from './icons/XIcon';
 import { EyeIcon } from './icons/EyeIcon';
 import { EyeOffIcon } from './icons/EyeOffIcon';
 import { YouTubeIcon } from './icons/YouTubeIcon';
+import { VMixIcon } from './icons/VMixIcon';
+import { BlenderIcon } from './icons/BlenderIcon';
 
 
 interface ConnectionsPanelProps {
@@ -27,21 +31,45 @@ interface UserProfile {
 export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onClose }) => {
   // Microsoft Graph State
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [isMsLoading, setIsMsLoading] = useState(false);
+  const [msError, setMsError] = useState<string | null>(null);
   
   // X API Key State
   const [xApiKey, setXApiKey] = useState('');
   const [isXApiKeySaved, setIsXApiKeySaved] = useState(false);
   const [isXApiKeyVisible, setIsXApiKeyVisible] = useState(false);
 
-  // Load saved API key from localStorage on component mount
+  // vMix State
+  const [vMixHost, setVMixHost] = useState('127.0.0.1');
+  const [vMixPort, setVMixPort] = useState('8088');
+  const [isVMixConnected, setIsVMixConnected] = useState(false);
+  const [isVMixConnecting, setIsVMixConnecting] = useState(false);
+  const [vMixError, setVMixError] = useState<string | null>(null);
+
+  // Blender State
+  const [blenderHost, setBlenderHost] = useState('127.0.0.1');
+  const [blenderPort, setBlenderPort] = useState('8080');
+  const [isBlenderConnected, setIsBlenderConnected] = useState(false);
+  const [isBlenderConnecting, setIsBlenderConnecting] = useState(false);
+  const [blenderError, setBlenderError] = useState<string | null>(null);
+
+
+  // Load saved API keys and settings from localStorage on component mount
   useEffect(() => {
-    const savedKey = localStorage.getItem('x_api_key');
-    if (savedKey) {
-      setXApiKey(savedKey);
+    const savedXKey = localStorage.getItem('x_api_key');
+    if (savedXKey) {
+      setXApiKey(savedXKey);
       setIsXApiKeySaved(true);
     }
+    const savedVMixHost = localStorage.getItem('vmix_host');
+    if (savedVMixHost) setVMixHost(savedVMixHost);
+    const savedVMixPort = localStorage.getItem('vmix_port');
+    if (savedVMixPort) setVMixPort(savedVMixPort);
+
+    const savedBlenderHost = localStorage.getItem('blender_host');
+    if (savedBlenderHost) setBlenderHost(savedBlenderHost);
+    const savedBlenderPort = localStorage.getItem('blender_port');
+    if (savedBlenderPort) setBlenderPort(savedBlenderPort);
   }, []);
 
   useEffect(() => {
@@ -50,20 +78,20 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
       handleGetUserProfile();
     } else if (!isOpen) {
       setUser(null);
-      setError(null);
+      setMsError(null);
     }
   }, [isOpen]);
 
   const handleLogin = async () => {
-    setIsLoading(true);
-    setError(null);
+    setIsMsLoading(true);
+    setMsError(null);
     try {
       await authService.login();
       await handleGetUserProfile();
     } catch (e: any) {
-      setError(e.message || 'Login failed. Please try again.');
+      setMsError(e.message || 'Login failed. Please try again.');
     } finally {
-      setIsLoading(false);
+      setIsMsLoading(false);
     }
   };
   
@@ -73,15 +101,15 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
   };
 
   const handleGetUserProfile = async () => {
-    setIsLoading(true);
-    setError(null);
+    setIsMsLoading(true);
+    setMsError(null);
     try {
       const userProfile = await graphService.getUserProfile();
       setUser(userProfile);
     } catch (e: any) {
-      setError(e.message || 'Could not fetch user profile.');
+      setMsError(e.message || 'Could not fetch user profile.');
     } finally {
-      setIsLoading(false);
+      setIsMsLoading(false);
     }
   }
   
@@ -95,6 +123,59 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
     setXApiKey('');
     setIsXApiKeySaved(false);
   };
+
+  const handleConnectVMix = async () => {
+    setIsVMixConnecting(true);
+    setVMixError(null);
+    try {
+      const success = await vmixService.checkConnection(vMixHost, vMixPort);
+      if (success) {
+        setIsVMixConnected(true);
+        localStorage.setItem('vmix_host', vMixHost);
+        localStorage.setItem('vmix_port', vMixPort);
+        vmixService.setConnection(vMixHost, vMixPort);
+      } else {
+        throw new Error('vMix API did not respond as expected.');
+      }
+    } catch (err) {
+      setVMixError('Connection failed. Check host/port and ensure vMix Web Controller is active.');
+      setIsVMixConnected(false);
+    } finally {
+      setIsVMixConnecting(false);
+    }
+  };
+
+  const handleDisconnectVMix = () => {
+    setIsVMixConnected(false);
+    vmixService.disconnect();
+  };
+
+  const handleConnectBlender = async () => {
+    setIsBlenderConnecting(true);
+    setBlenderError(null);
+    try {
+      const success = await blenderService.checkConnection(blenderHost, blenderPort);
+      if (success) {
+        setIsBlenderConnected(true);
+        localStorage.setItem('blender_host', blenderHost);
+        localStorage.setItem('blender_port', blenderPort);
+        blenderService.setConnection(blenderHost, blenderPort);
+      } else {
+        throw new Error('Blender addon did not respond.');
+      }
+    } catch (err) {
+      setBlenderError('Connection failed. Check host/port and ensure the control addon is running in Blender.');
+      setIsBlenderConnected(false);
+    } finally {
+      setIsBlenderConnecting(false);
+    }
+  };
+
+  const handleDisconnectBlender = () => {
+    setIsBlenderConnected(false);
+    blenderService.disconnect();
+  };
+
 
   return (
     <>
@@ -126,7 +207,7 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
                 <div className={`w-3 h-3 rounded-full ${user ? 'bg-green-500' : 'bg-slate-500'}`}></div>
               </div>
               <p className="text-xs text-slate-400 mt-1 mb-4">Access your profile, files, and emails.</p>
-              {error && <p className="text-xs text-red-400 mb-3">{error}</p>}
+              {msError && <p className="text-xs text-red-400 mb-3">{msError}</p>}
               {user ? (
                 <div>
                   <p className="text-sm text-slate-300">Signed in as <span className="font-semibold text-cyan-400">{user.displayName}</span></p>
@@ -141,12 +222,121 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
               ) : (
                 <button 
                   onClick={handleLogin}
-                  disabled={isLoading}
+                  disabled={isMsLoading}
                   className="w-full py-2 px-4 text-sm font-semibold rounded-md bg-cyan-600/50 text-cyan-200 hover:bg-cyan-600/80 disabled:bg-slate-700 disabled:cursor-wait transition-colors"
                 >
-                  {isLoading ? 'Connecting...' : 'Connect'}
+                  {isMsLoading ? 'Connecting...' : 'Connect'}
                 </button>
               )}
+            </div>
+          </div>
+
+          {/* Local Software Integrations */}
+          <div>
+            <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">Local Software Integrations</h3>
+            <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700 space-y-6">
+                {/* vMix Card */}
+                <div>
+                    <div className="flex justify-between items-center">
+                        <div className="flex items-center space-x-3">
+                            <VMixIcon className="w-5 h-5 text-slate-300"/>
+                            <p className="font-bold text-slate-100">vMix</p>
+                        </div>
+                        <div className={`w-3 h-3 rounded-full ${isVMixConnected ? 'bg-green-500' : 'bg-slate-500'}`}></div>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1 mb-4">Connect to the vMix Web Controller API.</p>
+                    {vMixError && <p className="text-xs text-red-400 mb-3">{vMixError}</p>}
+                    
+                    {isVMixConnected ? (
+                        <div>
+                            <p className="text-sm text-slate-300">Connected to <span className="font-semibold text-cyan-400">{vMixHost}:{vMixPort}</span></p>
+                            <button 
+                                onClick={handleDisconnectVMix}
+                                className="w-full mt-4 py-2 px-4 text-sm font-semibold rounded-md bg-rose-600/50 text-rose-200 hover:bg-rose-600/80 transition-colors"
+                            >
+                                Disconnect
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            <div className="flex space-x-2">
+                                <input
+                                    type="text"
+                                    value={vMixHost}
+                                    onChange={(e) => setVMixHost(e.target.value)}
+                                    placeholder="Host (e.g., 127.0.0.1)"
+                                    className="w-2/3 bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                />
+                                <input
+                                    type="text"
+                                    value={vMixPort}
+                                    onChange={(e) => setVMixPort(e.target.value)}
+                                    placeholder="Port"
+                                    className="w-1/3 bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                />
+                            </div>
+                            <button 
+                                onClick={handleConnectVMix}
+                                disabled={isVMixConnecting}
+                                className="w-full py-2 px-4 text-sm font-semibold rounded-md bg-cyan-600/50 text-cyan-200 hover:bg-cyan-600/80 disabled:bg-slate-700 disabled:cursor-wait transition-colors"
+                            >
+                                {isVMixConnecting ? 'Connecting...' : 'Connect'}
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {/* Blender Card */}
+                <div>
+                    <div className="flex justify-between items-center">
+                        <div className="flex items-center space-x-3">
+                            <BlenderIcon className="w-5 h-5 text-slate-300"/>
+                            <p className="font-bold text-slate-100">Blender</p>
+                        </div>
+                        <div className={`w-3 h-3 rounded-full ${isBlenderConnected ? 'bg-green-500' : 'bg-slate-500'}`}></div>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1 mb-4">Connect to a Blender scripting addon.</p>
+                    {blenderError && <p className="text-xs text-red-400 mb-3">{blenderError}</p>}
+                    
+                    {isBlenderConnected ? (
+                        <div>
+                            <p className="text-sm text-slate-300">Connected to <span className="font-semibold text-cyan-400">{blenderHost}:{blenderPort}</span></p>
+                            <button 
+                                onClick={handleDisconnectBlender}
+                                className="w-full mt-4 py-2 px-4 text-sm font-semibold rounded-md bg-rose-600/50 text-rose-200 hover:bg-rose-600/80 transition-colors"
+                            >
+                                Disconnect
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            <div className="flex space-x-2">
+                                <input
+                                    type="text"
+                                    value={blenderHost}
+                                    onChange={(e) => setBlenderHost(e.target.value)}
+                                    placeholder="Host (e.g., 127.0.0.1)"
+                                    className="w-2/3 bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                />
+                                <input
+                                    type="text"
+                                    value={blenderPort}
+                                    onChange={(e) => setBlenderPort(e.target.value)}
+                                    placeholder="Port"
+                                    className="w-1/3 bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                />
+                            </div>
+                            <button 
+                                onClick={handleConnectBlender}
+                                disabled={isBlenderConnecting}
+                                className="w-full py-2 px-4 text-sm font-semibold rounded-md bg-cyan-600/50 text-cyan-200 hover:bg-cyan-600/80 disabled:bg-slate-700 disabled:cursor-wait transition-colors"
+                            >
+                                {isBlenderConnecting ? 'Connecting...' : 'Connect'}
+                            </button>
+                        </div>
+                    )}
+                </div>
+
             </div>
           </div>
           
