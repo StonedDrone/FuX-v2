@@ -15,7 +15,7 @@ const getChatHistory = (messages: Message[]) => {
 };
 
 export interface AgentStep {
-  tool: 'vmix' | 'blender' | 'video' | 'generateImage' | 'search' | 'finalAnswer';
+  tool: 'vmix' | 'blender' | 'video' | 'spotify' | 'generateImage' | 'search' | 'finalAnswer';
   args: string;
   thought: string;
 }
@@ -35,6 +35,7 @@ export const createExecutionPlan = async (goal: string): Promise<AgentStep[]> =>
 - vmix: Control vMix live production software. Usage: "switch input <input_name_or_number>" OR "transition input <id> <type> <duration_ms>" OR "script <python_script_string>" OR "audio volume input <id> <0-100>" OR "audio mute input <id>" OR "audio unmute input <id>" OR "audio master <0-100>"
 - blender: Execute a Python script in Blender. Usage: "<python_script_string>"
 - video: Edit a video file. Usage: "autocut <source_file_path> with instructions <text_instructions>"
+- spotify: Control Spotify playback. Usage: "play <song_name>"
 - generateImage: Generates an image from a text prompt. **Output:** A data URL for the generated image.
 - search: Search the web for information. **Output:** A text summary of the search results.
 - finalAnswer: Provide a final text answer to the user. Usage: "<summary_of_results>"
@@ -64,7 +65,7 @@ Respond with a JSON object that strictly adheres to the provided schema.`;
                 tool: {
                   type: Type.STRING,
                   description: "The name of the tool to use.",
-                  enum: ['vmix', 'blender', 'video', 'generateImage', 'search', 'finalAnswer']
+                  enum: ['vmix', 'blender', 'video', 'spotify', 'generateImage', 'search', 'finalAnswer']
                 },
                 args: {
                   type: Type.STRING,

@@ -11,6 +11,7 @@ import { encode, decode, decodeAudioData } from './utils/audioUtils';
 import { vmixService } from './services/vmixService';
 import { blenderService } from './services/blenderService';
 import { videoService } from './services/videoService';
+import { spotifyService } from './services/spotifyService';
 
 interface GroundingChunk {
   web?: {
@@ -232,7 +233,7 @@ const App: React.FC = () => {
         case 'switch': {
             const [keyword, inputId] = rest;
             if (keyword?.toLowerCase() === 'input' && inputId) {
-                await vmixService.sendCommand('Cut', { Input: inputId });
+                await vmixService.switchInput(inputId);
                 return `vMix command successful: Switched to input ${inputId}`;
             }
             break;
@@ -241,7 +242,7 @@ const App: React.FC = () => {
             const [keyword, inputId, transitionType, duration] = rest;
              if (keyword?.toLowerCase() === 'input' && inputId && transitionType && duration) {
                 if (isNaN(parseInt(duration))) throw new Error('Invalid duration. Must be a number in milliseconds.');
-                await vmixService.sendCommand(transitionType, { Input: inputId, Duration: duration });
+                await vmixService.transitionInput(inputId, transitionType, duration);
                 return `vMix command successful: Transitioned to input ${inputId}`;
             }
             break;
@@ -321,6 +322,22 @@ const App: React.FC = () => {
     throw new Error("Invalid video command or arguments. Use: autocut <source> with instructions <prompt>");
   };
 
+  const handleSpotifyCommand = async (args: string[]): Promise<string> => {
+    const [subCommand, ...rest] = args;
+    const trackName = rest.join(' ');
+    
+    switch (subCommand?.toLowerCase()) {
+        case 'play': {
+            if (!trackName) {
+                throw new Error("Please specify a song or artist to play.");
+            }
+            return await spotifyService.play(trackName);
+        }
+    }
+    
+    throw new Error("Invalid Spotify command. Supported: play <track name>");
+  };
+
   const handleSendMessage = async (messageToSend?: string) => {
     const messageContent = messageToSend || input;
     if (!messageContent.trim()) return;
@@ -355,7 +372,7 @@ const App: React.FC = () => {
     
     switch (cmd) {
       case '/help':
-        addMessage({ role: 'fux', content: 'Available Commands:\n/help - Show this message\n/agent <goal> - Engage agent mode for a complex task\n/ingest <source> - Ingest a new Power Module\n/powers - List ingested Power Modules\n/use <module> [args] - Use a Power Module (e.g. vmix, blender, video)\n  - vmix switch input <id>\n  - vmix transition input <id> <type> <duration_ms>\n  - vmix script <python_script>\n  - vmix audio volume input <id> <0-100>\n  - vmix audio mute input <id>\n  - vmix audio unmute input <id>\n  - vmix audio master <0-100>\n  - blender <python_script>\n  - video autocut <source_path> with instructions <text>\n/generate image <prompt> - Create an image from a text description\n/search <query> - Get a web-grounded answer to a query' });
+        addMessage({ role: 'fux', content: 'Available Commands:\n/help - Show this message\n/agent <goal> - Engage agent mode for a complex task\n/ingest <source> - Ingest a new Power Module\n/powers - List ingested Power Modules\n/use <module> [args] - Use a Power Module (e.g. vmix, blender, video, spotify)\n  - vmix switch input <id>\n  - vmix transition input <id> <type> <duration_ms>\n  - vmix script <python_script>\n  - vmix audio volume input <id> <0-100>\n  - vmix audio mute input <id>\n  - vmix audio unmute input <id>\n  - vmix audio master <0-100>\n  - blender <python_script>\n  - video autocut <source_path> with instructions <text>\n  - spotify play <song_name>\n/generate image <prompt> - Create an image from a text description\n/search <query> - Get a web-grounded answer to a query' });
         break;
       case '/ingest':
         // Mock ingestion
@@ -420,6 +437,18 @@ const App: React.FC = () => {
             }
             break;
         }
+
+        if (powerName.toLowerCase() === 'spotify') {
+            setCurrentTask(`Executing Spotify command...`);
+            try {
+                const resultMessage = await handleSpotifyCommand(powerArgs);
+                addMessage({ role: 'system_core', content: resultMessage });
+            } catch (e: any) {
+                addMessage({ role: 'system_core', content: `Spotify command failed: ${e.message}` });
+            }
+            break;
+        }
+
 
         setCurrentTask(`Executing Power Module: ${powerName}`);
         try {
@@ -524,6 +553,11 @@ const App: React.FC = () => {
                 const videoResult = await handleVideoCommand(resolvedArgs.split(/\s+/));
                 currentStepOutput = videoResult;
                 addMessage({ role: 'system_core', content: videoResult });
+                break;
+              case 'spotify':
+                const spotifyResult = await handleSpotifyCommand(resolvedArgs.split(/\s+/));
+                currentStepOutput = spotifyResult;
+                addMessage({ role: 'system_core', content: spotifyResult });
                 break;
               case 'generateImage':
                 const base64Image = await generateImage(resolvedArgs);

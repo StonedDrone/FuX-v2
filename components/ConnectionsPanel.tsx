@@ -18,6 +18,8 @@ import { YouTubeIcon } from './icons/YouTubeIcon';
 import { VMixIcon } from './icons/VMixIcon';
 import { BlenderIcon } from './icons/BlenderIcon';
 import { VideoIcon } from './icons/VideoIcon';
+import { SpotifyIcon } from './icons/SpotifyIcon';
+import { spotifyService } from '../services/spotifyService';
 
 
 interface ConnectionsPanelProps {
@@ -62,6 +64,11 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
   const [isVideoConnecting, setIsVideoConnecting] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
 
+  // Spotify State
+  const [isSpotifyConnected, setIsSpotifyConnected] = useState(false);
+  const [isSpotifyConnecting, setIsSpotifyConnecting] = useState(false);
+  const [spotifyError, setSpotifyError] = useState<string | null>(null);
+
 
   // Load saved API keys and settings from localStorage on component mount
   useEffect(() => {
@@ -84,6 +91,11 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
     if (savedVideoHost) setVideoHost(savedVideoHost);
     const savedVideoPort = localStorage.getItem('video_port');
     if (savedVideoPort) setVideoPort(savedVideoPort);
+
+    const spotifyAccount = spotifyService.getAccount();
+    if (spotifyAccount) {
+      setIsSpotifyConnected(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -187,6 +199,7 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
 
   const handleDisconnectBlender = () => {
     setIsBlenderConnected(false);
+    setBlenderError(null);
     blenderService.disconnect();
   };
 
@@ -216,6 +229,24 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
     videoService.disconnect();
   };
 
+  const handleConnectSpotify = async () => {
+    setIsSpotifyConnecting(true);
+    setSpotifyError(null);
+    try {
+      await spotifyService.login();
+      setIsSpotifyConnected(true);
+    } catch (e: any) {
+      setSpotifyError(e.message || 'Spotify connection failed.');
+    } finally {
+      setIsSpotifyConnecting(false);
+    }
+  };
+
+  const handleDisconnectSpotify = async () => {
+    await spotifyService.logout();
+    setIsSpotifyConnected(false);
+  };
+
 
   return (
     <>
@@ -241,33 +272,66 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
           {/* Cloud Integrations */}
           <div>
             <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">Cloud Integrations</h3>
-            <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700">
-              <div className="flex justify-between items-center">
-                <p className="font-bold text-slate-100">Microsoft 365</p>
-                <div className={`w-3 h-3 rounded-full ${user ? 'bg-green-500' : 'bg-slate-500'}`}></div>
-              </div>
-              <p className="text-xs text-slate-400 mt-1 mb-4">Access your profile, files, and emails.</p>
-              {msError && <p className="text-xs text-red-400 mb-3">{msError}</p>}
-              {user ? (
-                <div>
-                  <p className="text-sm text-slate-300">Signed in as <span className="font-semibold text-cyan-400">{user.displayName}</span></p>
-                  <p className="text-xs text-slate-500">{user.mail}</p>
-                  <button 
-                    onClick={handleLogout}
-                    className="w-full mt-4 py-2 px-4 text-sm font-semibold rounded-md bg-rose-600/50 text-rose-200 hover:bg-rose-600/80 transition-colors"
-                  >
-                    Disconnect
-                  </button>
+            <div className="space-y-4">
+              <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700">
+                <div className="flex justify-between items-center">
+                  <p className="font-bold text-slate-100">Microsoft 365</p>
+                  <div className={`w-3 h-3 rounded-full ${user ? 'bg-green-500' : 'bg-slate-500'}`}></div>
                 </div>
-              ) : (
-                <button 
-                  onClick={handleLogin}
-                  disabled={isMsLoading}
-                  className="w-full py-2 px-4 text-sm font-semibold rounded-md bg-cyan-600/50 text-cyan-200 hover:bg-cyan-600/80 disabled:bg-slate-700 disabled:cursor-wait transition-colors"
-                >
-                  {isMsLoading ? 'Connecting...' : 'Connect'}
-                </button>
-              )}
+                <p className="text-xs text-slate-400 mt-1 mb-4">Access your profile, files, and emails.</p>
+                {msError && <p className="text-xs text-red-400 mb-3">{msError}</p>}
+                {user ? (
+                  <div>
+                    <p className="text-sm text-slate-300">Signed in as <span className="font-semibold text-cyan-400">{user.displayName}</span></p>
+                    <p className="text-xs text-slate-500">{user.mail}</p>
+                    <button 
+                      onClick={handleLogout}
+                      className="w-full mt-4 py-2 px-4 text-sm font-semibold rounded-md bg-rose-600/50 text-rose-200 hover:bg-rose-600/80 transition-colors"
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                ) : (
+                  <button 
+                    onClick={handleLogin}
+                    disabled={isMsLoading}
+                    className="w-full py-2 px-4 text-sm font-semibold rounded-md bg-cyan-600/50 text-cyan-200 hover:bg-cyan-600/80 disabled:bg-slate-700 disabled:cursor-wait transition-colors"
+                  >
+                    {isMsLoading ? 'Connecting...' : 'Connect'}
+                  </button>
+                )}
+              </div>
+              {/* Spotify Card */}
+              <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center space-x-3">
+                    <SpotifyIcon className="w-6 h-6 text-[#1DB954]" />
+                    <p className="font-bold text-slate-100">Spotify</p>
+                  </div>
+                  <div className={`w-3 h-3 rounded-full ${isSpotifyConnected ? 'bg-green-500' : 'bg-slate-500'}`}></div>
+                </div>
+                <p className="text-xs text-slate-400 mt-1 mb-4">Connect your Spotify account to control playback.</p>
+                {spotifyError && <p className="text-xs text-red-400 mb-3">{spotifyError}</p>}
+                {isSpotifyConnected ? (
+                  <div>
+                    <p className="text-sm text-slate-300">Signed in to Spotify.</p>
+                    <button 
+                      onClick={handleDisconnectSpotify}
+                      className="w-full mt-4 py-2 px-4 text-sm font-semibold rounded-md bg-rose-600/50 text-rose-200 hover:bg-rose-600/80 transition-colors"
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                ) : (
+                  <button 
+                    onClick={handleConnectSpotify}
+                    disabled={isSpotifyConnecting}
+                    className="w-full py-2 px-4 text-sm font-semibold rounded-md bg-cyan-600/50 text-cyan-200 hover:bg-cyan-600/80 disabled:bg-slate-700 disabled:cursor-wait transition-colors"
+                  >
+                    {isSpotifyConnecting ? 'Connecting...' : 'Connect'}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -333,7 +397,27 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
                             <BlenderIcon className="w-5 h-5 text-slate-300"/>
                             <p className="font-bold text-slate-100">Blender</p>
                         </div>
-                        <div className={`w-3 h-3 rounded-full ${isBlenderConnected ? 'bg-green-500' : 'bg-slate-500'}`}></div>
+                        {isBlenderConnecting ? (
+                            <div className="flex items-center space-x-2 text-xs text-amber-400">
+                                <div className="w-2 h-2 bg-current rounded-full animate-pulse"></div>
+                                <span>Connecting</span>
+                            </div>
+                        ) : isBlenderConnected ? (
+                            <div className="flex items-center space-x-2 text-xs text-green-400">
+                                <div className="w-2 h-2 bg-current rounded-full"></div>
+                                <span>Connected</span>
+                            </div>
+                        ) : blenderError ? (
+                            <div className="flex items-center space-x-2 text-xs text-red-400">
+                                <div className="w-2 h-2 bg-current rounded-full"></div>
+                                <span>Error</span>
+                            </div>
+                        ) : (
+                            <div className="flex items-center space-x-2 text-xs text-slate-500">
+                                <div className="w-2 h-2 bg-current rounded-full"></div>
+                                <span>Disconnected</span>
+                            </div>
+                        )}
                     </div>
                     <p className="text-xs text-slate-400 mt-1 mb-4">Connect to a Blender scripting addon.</p>
                     {blenderError && <p className="text-xs text-red-400 mb-3">{blenderError}</p>}

@@ -82,6 +82,24 @@ class VMixService {
     async runScript(script: string): Promise<void> {
         await this.sendCommand('ScriptStartDynamic', { Value: script });
     }
+
+    /**
+     * Switches to a specific input using the 'Cut' function.
+     * @param inputId The ID or name of the input to switch to.
+     */
+    async switchInput(inputId: string): Promise<void> {
+        await this.sendCommand('Cut', { Input: inputId });
+    }
+
+    /**
+     * Transitions to a specific input using a specified transition type and duration.
+     * @param inputId The ID or name of the input to transition to.
+     * @param transitionType The name of the transition function (e.g., 'Fade', 'Stinger1').
+     * @param duration The duration of the transition in milliseconds.
+     */
+    async transitionInput(inputId: string, transitionType: string, duration: string): Promise<void> {
+        await this.sendCommand(transitionType, { Input: inputId, Duration: duration });
+    }
 }
 
 export const vmixService = new VMixService();
