@@ -1,9 +1,5 @@
 import React, { useState, useEffect } from 'react';
-
-type Message = {
-  role: 'user' | 'fux';
-  content: string;
-};
+import type { Message } from '../App';
 
 interface ChatMessageProps {
   message: Message;
@@ -47,6 +43,20 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage
     }
     return <p>{line}</p>;
   };
+  
+  if (role === 'system_core') {
+    return (
+      <div className="flex justify-center my-2">
+        <div className="w-full max-w-xl lg:max-w-2xl px-4 py-2 rounded-lg bg-slate-900 border border-amber-500/30">
+          <p className="text-xs font-bold text-amber-400 mb-1 tracking-wider">[SYSTEM CORE LOG]</p>
+          <pre className="whitespace-pre-wrap font-mono text-xs text-slate-300">
+            {displayedText}
+          </pre>
+        </div>
+      </div>
+    );
+  }
+
 
   const isFux = role === 'fux';
   const messageAlignment = isFux ? 'justify-start' : 'justify-end';

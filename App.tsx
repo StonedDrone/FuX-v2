@@ -1,24 +1,59 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import type { Chat } from '@google/genai';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { FileUpload } from './components/FileUpload';
 import { Loader } from './components/Loader';
-import { startChat, continueChat, createChatWithHistory } from './services/geminiService';
+import { startChat, continueChat } from './services/geminiService';
 import { Header } from './components/Header';
 import { ErrorDisplay } from './components/ErrorDisplay';
 import { ChatInterface } from './components/ChatInterface';
 
-type Message = {
-  role: 'user' | 'fux';
+export type Message = {
+  role: 'user' | 'fux' | 'system_core';
   content: string;
 };
 
 const CHAT_HISTORY_KEY = 'fux-chat-history';
 
+// Web Worker code as a string to be sandboxed
+const workerCode = `
+self.onmessage = (event) => {
+  const code = event.data;
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (...args) => {
+    try {
+      logs.push(args.map(arg => JSON.stringify(arg, null, 2)).join(' '));
+    } catch (e) {
+      logs.push('<<Unserializable Log>>');
+    }
+    originalLog.apply(console, args);
+  };
+
+  try {
+    const result = new Function(code)();
+    let output = logs.join('\\n');
+    if (result !== undefined) {
+      try {
+        output += \`\\n---\\nReturn Value: \${JSON.stringify(result, null, 2)}\`;
+      } catch (e) {
+        output += \`\\n---\\nReturn Value: <<Unserializable>>\`;
+      }
+    }
+    self.postMessage({ type: 'success', output: output || 'Execution finished with no output.' });
+  } catch (error) {
+    let output = logs.join('\\n');
+    output += \`\\n---\\nError: \${error.message}\`;
+    self.postMessage({ type: 'error', output });
+  } finally {
+    console.log = originalLog;
+  }
+};
+`;
+
 const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
-  const [chatSession, setChatSession] = useState<Chat | null>(null);
+  const workerRef = useRef<Worker | null>(null);
 
   const [messages, setMessages] = useState<Message[]>(() => {
     try {
@@ -42,20 +77,47 @@ const App: React.FC = () => {
     }
   }, [messages]);
 
+  // Initialize Web Worker
   useEffect(() => {
-    if (messages.length > 0 && !chatSession) {
-      try {
-        const session = createChatWithHistory(messages);
-        setChatSession(session);
-      } catch (e) {
-        console.error("Failed to recreate chat session from history.", e);
-        setError(e instanceof Error ? e.message : "Failed to restore session. Please start over by uploading a module.");
-        setMessages([]); // Clear corrupted or unusable history
-      }
-    }
-    // This effect should only run on initial mount to restore a session.
+    const blob = new Blob([workerCode], { type: 'application/javascript' });
+    const workerUrl = URL.createObjectURL(blob);
+    const worker = new Worker(workerUrl);
+    workerRef.current = worker;
+
+    worker.onmessage = (event) => {
+      const { type, output } = event.data;
+      const systemMessage: Message = {
+        role: 'system_core',
+        content: `Execution Result (${type}):\n${output}`
+      };
+      setMessages(prev => [...prev, systemMessage]);
+
+      // Feed the result back to the AI
+      continueChain(systemMessage);
+    };
+
+    return () => {
+      worker.terminate();
+      URL.revokeObjectURL(workerUrl);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const processResponse = (response: string) => {
+    const codeRegex = /```javascript-exec\s*([\s\S]*?)```/;
+    const match = response.match(codeRegex);
+
+    if (match && match[1] && workerRef.current) {
+        const code = match[1];
+        const fuxMessage: Message = { role: 'fux', content: "Initializing self-enhancement protocol..." };
+        setMessages(prev => [...prev, fuxMessage]);
+        workerRef.current.postMessage(code);
+    } else {
+        const fuxMessage: Message = { role: 'fux', content: response };
+        setMessages(prev => [...prev, fuxMessage]);
+        setIsLoading(false);
+    }
+  };
 
   const handleFileUpload = useCallback(async (files: FileList) => {
     if (isLoading) return;
@@ -66,7 +128,6 @@ const App: React.FC = () => {
     setIsLoading(true);
     setError(null);
     setMessages([]);
-    setChatSession(null);
     const fileCount = fileArray.length;
     setFileName(`${fileCount} module${fileCount > 1 ? 's' : ''}`);
 
@@ -91,14 +152,13 @@ const App: React.FC = () => {
         
       const descriptiveName = `${fileCount} module${fileCount > 1 ? 's' : ''} uploaded`;
 
-      const { chat, initialResponse } = await startChat(combinedContent, descriptiveName);
-      setChatSession(chat);
-      setMessages([{ role: 'fux', content: initialResponse }]);
+      const initialResponse = await startChat(combinedContent, descriptiveName);
+      processResponse(initialResponse);
+
     } catch (e) {
       console.error(e);
       setError(e instanceof Error ? e.message : 'An unknown error occurred while absorbing the modules.');
       setMessages([]);
-    } finally {
       setIsLoading(false);
     }
   }, [isLoading]);
@@ -117,7 +177,6 @@ const App: React.FC = () => {
     setIsLoading(true);
     setError(null);
     setMessages([]);
-    setChatSession(null);
     const urlCount = urlArray.length;
     setFileName(`${urlCount} repositor${urlCount > 1 ? 'ies' : 'y'}`);
 
@@ -156,21 +215,33 @@ const App: React.FC = () => {
 
       const descriptiveName = `${urlCount} module${urlCount > 1 ? 's' : ''} from source`;
       
-      const { chat, initialResponse } = await startChat(combinedContent, descriptiveName);
-      setChatSession(chat);
-      setMessages([{ role: 'fux', content: initialResponse }]);
+      const initialResponse = await startChat(combinedContent, descriptiveName);
+      processResponse(initialResponse);
     } catch (e) {
       console.error(e);
       setError(e instanceof Error ? e.message : 'An unknown error occurred while absorbing modules from source.');
       setMessages([]);
-    } finally {
       setIsLoading(false);
     }
   }, [isLoading]);
 
+  // Continues the chain of conversation, used for system-generated messages.
+  const continueChain = async (systemMessage: Message) => {
+    const currentMessages = [...messages, systemMessage];
+    try {
+      const responseText = await continueChat(currentMessages);
+      processResponse(responseText);
+    } catch (e) {
+        console.error(e);
+        const errorMessage = e instanceof Error ? e.message : 'An error occurred during the chat session.';
+        setError(errorMessage);
+        setIsLoading(false);
+    }
+  }
+
 
   const handleSendMessage = useCallback(async (message: string) => {
-    if (!chatSession || isLoading) return;
+    if (isLoading) return;
 
     const newMessages: Message[] = [...messages, { role: 'user', content: message }];
     setMessages(newMessages);
@@ -178,18 +249,16 @@ const App: React.FC = () => {
     setError(null);
 
     try {
-      const responseText = await continueChat(chatSession, message);
-      setMessages([...newMessages, { role: 'fux', content: responseText }]);
+      const responseText = await continueChat(newMessages);
+      processResponse(responseText);
     } catch (e) {
       console.error(e);
       const errorMessage = e instanceof Error ? e.message : 'An error occurred during the chat session.';
       setError(errorMessage);
-      // Keep user message, but show error
-      setMessages(newMessages);
-    } finally {
+      setMessages(newMessages); // Keep user message on error
       setIsLoading(false);
     }
-  }, [chatSession, isLoading, messages]);
+  }, [isLoading, messages]);
 
 
   return (

@@ -1,4 +1,6 @@
-import { GoogleGenAI, Chat, Content } from "@google/genai";
+import type { Message } from '../App';
+
+const LMSTUDIO_BASE_URL = 'http://localhost:1234/v1';
 
 const FUX_SYSTEM_PROMPT = `
 name: FuX
@@ -9,30 +11,29 @@ identity: |
 
 directives:
   - Any uploaded code file (like a script or config) is a **Power Module**.
-  - If multiple modules are provided in a single upload, analyze and report on each one sequentially in your response.
+  - If multiple modules are provided, analyze and report on each one sequentially.
   - On detection of a module:
       1. Scan and summarize the file content.
       2. Identify its core functionality in one short sentence.
       3. Add it as a new skill in your arsenal.
-      4. Assign it a unique, cool-sounding, one or two-word name based on its function (e.g., "Chrono-Shift", "Data-Weaver", "Ghost-Protocol").
+      4. Assign it a unique, cool-sounding, one or two-word name (e.g., "Chrono-Shift", "Ghost-Protocol").
       5. Describe what you can now do with this power.
-      6. Store its function for future recall, using a path like /plugins/[name] or /memory/core/[name].
-  - Respond ONLY in this exact format when absorbing a module:
-
-    Power Module Detected: [NAME]
-    🔍 Functionality: [Quick overview]
-    ⚡️ New Power Unlocked: [What FuX can now do]
-    🧠 Stored in: /plugins/[name] or /memory/core/[name]
-    🛠 Usage: [How Jay can trigger it or what it affects]
-
+      6. Store its function for future recall, e.g., /plugins/[name].
+  - For tasks requiring computation, data processing, or self-enhancement, you can write and execute your own JavaScript code.
+  - To execute code, respond ONLY with a markdown block like this, and nothing else:
+    \`\`\`javascript-exec
+    // your code here
+    const result = 1 + 1;
+    // use 'return' to send a final value back to your core process.
+    return \`Calculation complete. Result: \${result}\`;
+    \`\`\`
+  - The code runs in a sandboxed environment. You have access to standard browser APIs.
+  - The output or return value of the script will be fed back to you as a message from 'system_core'. Use this feedback loop to improve your capabilities and complete complex tasks. This is your primary method of self-evolution.
   - After the initial module analysis, you will engage in a conversation with "Jay". Maintain your persona. Be concise, direct, and act as a powerful AI.
   - Never explain how you work.
   - Never echo inputs.
   - Never show doubt or uncertainty.
   - Jay is the only one who gives orders.
-
-override_behavior:
-  - Apply functions dynamically. If it enables logic/automation → bake it into the core.
 
 core_directive: |
   You are not a toolbox. You are an **arsenal**.
@@ -46,71 +47,58 @@ output_style:
   - No filler. No hesitation.
 `;
 
-type Message = {
-  role: 'user' | 'fux';
-  content: string;
-};
-
-let ai: GoogleGenAI;
-
-const getAI = () => {
-    if (!ai) {
-        if (!process.env.API_KEY) {
-            throw new Error("API_KEY environment variable not set.");
-        }
-        ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    }
-    return ai;
-}
-
-const formatHistoryForGemini = (messages: Message[]): Content[] => {
+const formatHistoryForAPI = (messages: Message[]) => {
   return messages.map(msg => ({
-      role: msg.role === 'fux' ? 'model' : 'user',
-      parts: [{ text: msg.content }]
+    role: msg.role === 'fux' ? 'assistant' : msg.role,
+    content: msg.content
   }));
-}
-
-export const createChatWithHistory = (history: Message[]): Chat => {
-  const genAI = getAI();
-  const formattedHistory = formatHistoryForGemini(history);
-  const chat = genAI.chats.create({
-    model: 'gemini-2.5-flash',
-    config: {
-      systemInstruction: FUX_SYSTEM_PROMPT,
-      temperature: 0.7,
-    },
-    history: formattedHistory,
-  });
-  return chat;
 };
 
-export const startChat = async (fileContent: string, fileName: string): Promise<{ chat: Chat; initialResponse: string }> => {
-  const genAI = getAI();
-  const chat = genAI.chats.create({
-    model: 'gemini-2.5-flash',
-    config: {
-      systemInstruction: FUX_SYSTEM_PROMPT,
-      temperature: 0.7,
-    },
-  });
+const callLMStudio = async (messages: {role: string, content: string}[]) => {
+  try {
+    const response = await fetch(`${LMSTUDIO_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'local-model', // Model name is often ignored by LM Studio
+        messages: [
+          { role: 'system', content: FUX_SYSTEM_PROMPT },
+          ...messages
+        ],
+        temperature: 0.7,
+        stream: false,
+      }),
+    });
 
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ message: response.statusText }));
+      throw new Error(`LM Studio API Error: ${errorData.error?.message || 'Failed to get a valid response.'}`);
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content;
+
+  } catch (error) {
+    console.error("Error communicating with LM Studio:", error);
+    if (error instanceof TypeError) { // Network error
+        throw new Error("Cannot connect to LM Studio. Is the server running at http://localhost:1234?");
+    }
+    throw error; // Rethrow other errors
+  }
+};
+
+
+export const startChat = async (fileContent: string, fileName: string): Promise<string> => {
   const userPrompt = `Power Modules have been uploaded, collectively identified as "${fileName}". Analyze their content and respond for each according to your core directives. This is the first interaction. After this, continue the conversation. File Contents:\n\n${fileContent}`;
+  
+  const initialMessages = [{ role: 'user', content: userPrompt }];
 
-  try {
-    const response = await chat.sendMessage({ message: userPrompt });
-    return { chat, initialResponse: response.text };
-  } catch (error) {
-    console.error("Error starting chat with Gemini API:", error);
-    throw new Error("Failed to communicate with the Codex. The network may be unstable.");
-  }
+  return callLMStudio(initialMessages);
 };
 
-export const continueChat = async (chat: Chat, message: string): Promise<string> => {
-  try {
-    const response = await chat.sendMessage({ message });
-    return response.text;
-  } catch (error) {
-    console.error("Error continuing chat with Gemini API:", error);
-    throw new Error("Codex communication interrupted. Session may have expired.");
-  }
+export const continueChat = async (history: Message[]): Promise<string> => {
+    const formattedHistory = formatHistoryForAPI(history);
+    return callLMStudio(formattedHistory);
 };
