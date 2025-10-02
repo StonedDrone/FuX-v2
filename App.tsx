@@ -5,7 +5,8 @@ import { PluginRegistry } from './components/PluginRegistry';
 import { Hud } from './components/Hud';
 import { ConnectionsPanel } from './components/ConnectionsPanel';
 import { ErrorDisplay } from './components/ErrorDisplay';
-import { analyzeCode, executeCode, generateImage, googleSearch, createExecutionPlan, describePowers, AgentStep } from './services/geminiService';
+import { PowersGuide } from './components/PowersGuide';
+import { analyzeCode, executeCode, generateImage, googleSearch, createExecutionPlan, categorizePlugin, AgentStep } from './services/geminiService';
 import { GoogleGenAI, LiveServerMessage, Modality, Blob } from '@google/genai';
 import { vmixService } from './services/vmixService';
 import { blenderService } from './services/blenderService';
@@ -30,10 +31,11 @@ export interface Message {
   agentPlan?: AgentStep[];
 }
 
-interface Plugin {
+export interface Plugin {
   power_name: string;
   source: string;
-  category?: string;
+  category: string;
+  description: string;
 }
 
 // According to guidelines, API key must be from process.env.API_KEY
@@ -51,6 +53,7 @@ const App: React.FC = () => {
   // UI State
   const [isPluginRegistryOpen, setIsPluginRegistryOpen] = useState(false);
   const [isConnectionsPanelOpen, setIsConnectionsPanelOpen] = useState(false);
+  const [isPowersGuideOpen, setIsPowersGuideOpen] = useState(false);
   const [isTtsEnabled, setIsTtsEnabled] = useState(false);
 
   // Plugin State
@@ -383,30 +386,42 @@ const App: React.FC = () => {
     
     switch (cmd) {
       case '/help':
-        addMessage({ role: 'fux', content: 'Available Commands:\n/help - Show this message\n/agent <goal> - Engage agent mode for a complex task\n/ingest <source> - Ingest a new Power Module\n/powers - List ingested Power Modules\n/use <module> [args] - Use a Power Module (e.g. vmix, blender, video, spotify, twitch)\n  - vmix switch input <id>\n  - vmix transition input <id> <type> <duration_ms>\n  - vmix script <python_script>\n  - vmix audio volume input <id> <0-100>\n  - vmix audio mute input <id>\n  - vmix audio unmute input <id>\n  - vmix audio master <0-100>\n  - blender <python_script>\n  - video autocut <source_path> with instructions <text>\n  - spotify play <song_name>\n  - twitch start_stream | stop_stream\n/generate image <prompt> - Create an image from a text description\n/search <query> - Get a web-grounded answer to a query' });
+        addMessage({ role: 'fux', content: 'Available Commands:\n/help - Show this message\n/agent <goal> - Engage agent mode for a complex task\n/ingest <module_concept> - Ingest a new Power Module\n/powers - List ingested Power Modules\n/use <module> [args] - Use a Power Module (e.g. vmix, blender, video, spotify, twitch)\n  - vmix switch input <id>\n  - vmix transition input <id> <type> <duration_ms>\n  - vmix script <python_script>\n  - vmix audio volume input <id> <0-100>\n  - vmix audio mute input <id>\n  - vmix audio unmute input <id>\n  - vmix audio master <0-100>\n  - blender <python_script>\n  - video autocut <source_path> with instructions <text>\n  - spotify play <song_name>\n  - twitch start_stream | stop_stream\n/generate image <prompt> - Create an image from a text description\n/search <query> - Get a web-grounded answer to a query' });
         break;
       case '/ingest':
-        // Mock ingestion
-        setCurrentTask('Ingesting Power Module...');
-        await new Promise(res => setTimeout(res, 1500));
-        const newPlugin: Plugin = { power_name: `plugin_${plugins.length + 1}`, source: args.join(' ') || 'Unknown Source', category: 'General' };
-        setPlugins(prev => [...prev, newPlugin]);
-        addMessage({ role: 'system_core', content: `Successfully ingested Power Module: ${newPlugin.power_name} from ${newPlugin.source}`});
+        const source = args.join(' ');
+        if (!source) {
+          addMessage({ role: 'fux', content: 'Please provide a concept for the Power Module to ingest. Usage: /ingest <concept>' });
+          break;
+        }
+        setCurrentTask('Analyzing and categorizing module...');
+        try {
+          const existingNames = plugins.map(p => p.power_name);
+          const newPlugin = await categorizePlugin(source, existingNames);
+          setPlugins(prev => [...prev, { ...newPlugin, source }]);
+          addMessage({ role: 'system_core', content: `Successfully ingested Power Module: ${newPlugin.power_name} [${newPlugin.category}]`});
+        } catch(e: any) {
+          addMessage({ role: 'system_core', content: `Failed to ingest Power Module: ${e.message}` });
+        }
         break;
       case '/powers':
         if (plugins.length === 0) {
-          addMessage({ role: 'fux', content: 'No Power Modules have been ingested. Use /ingest <source> to add one.' });
+          addMessage({ role: 'fux', content: 'No Power Modules have been ingested. Use /ingest <concept> to add one.' });
         } else {
-          setCurrentTask('Accessing Power Module Arsenal...');
-          try {
-            const powerDescriptions = await describePowers(plugins);
-            addMessage({ role: 'fux', content: powerDescriptions });
-          } catch (e: any) {
-            addMessage({ role: 'system_core', content: `Failed to generate power descriptions: ${e.message}` });
-            // Fallback to old behavior
-            const powerList = plugins.map(p => `- ${p.power_name} (${p.source})`).join('\n');
-            addMessage({ role: 'fux', content: `Available Power Modules (Fallback):\n${powerList}` });
+          const groupedByCategory = plugins.reduce((acc, plugin) => {
+            if (!acc[plugin.category]) {
+              acc[plugin.category] = [];
+            }
+            acc[plugin.category].push(plugin);
+            return acc;
+          }, {} as Record<string, Plugin[]>);
+
+          let content = 'Available Power Modules:\n';
+          for (const category in groupedByCategory) {
+            content += `\n[${category.toUpperCase()}]\n`;
+            content += groupedByCategory[category].map(p => `- ${p.power_name}`).join('\n');
           }
+          addMessage({ role: 'fux', content });
         }
         break;
       case '/use':
@@ -643,6 +658,7 @@ const App: React.FC = () => {
           isTtsEnabled={isTtsEnabled}
           onToggleTts={() => setIsTtsEnabled(p => !p)}
           onToggleConnections={() => setIsConnectionsPanelOpen(p => !p)}
+          onTogglePowersGuide={() => setIsPowersGuideOpen(p => !p)}
         />
         {error && <ErrorDisplay message={error} />}
         <main className="flex-grow">
@@ -669,6 +685,11 @@ const App: React.FC = () => {
       <ConnectionsPanel
         isOpen={isConnectionsPanelOpen}
         onClose={() => setIsConnectionsPanelOpen(false)}
+      />
+      <PowersGuide
+        isOpen={isPowersGuideOpen}
+        plugins={plugins}
+        onClose={() => setIsPowersGuideOpen(false)}
       />
     </div>
   );

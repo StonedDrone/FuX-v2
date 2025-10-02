@@ -2,6 +2,7 @@ import React from 'react';
 import { TtsToggle } from './TtsToggle';
 import { RegistryIcon } from './icons/RegistryIcon';
 import { PlugIcon } from './icons/PlugIcon';
+import { BookOpenIcon } from './icons/BookOpenIcon';
 
 
 interface HeaderProps {
@@ -9,9 +10,10 @@ interface HeaderProps {
   isTtsEnabled: boolean;
   onToggleTts: () => void;
   onToggleConnections: () => void;
+  onTogglePowersGuide: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onToggleRegistry, isTtsEnabled, onToggleTts, onToggleConnections }) => {
+export const Header: React.FC<HeaderProps> = ({ onToggleRegistry, isTtsEnabled, onToggleTts, onToggleConnections, onTogglePowersGuide }) => {
   return (
     <header className="flex justify-between items-center p-4 border-b border-slate-800">
       <div className="text-center">
@@ -20,6 +22,14 @@ export const Header: React.FC<HeaderProps> = ({ onToggleRegistry, isTtsEnabled, 
       </div>
       <div className="flex items-center space-x-2">
         <TtsToggle isEnabled={isTtsEnabled} onToggle={onToggleTts} />
+        <button
+          onClick={onTogglePowersGuide}
+          className="p-2 rounded-full text-slate-400 hover:bg-slate-800 hover:text-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-colors"
+          aria-label="Toggle Powers Guide"
+          title="Toggle Powers Guide"
+        >
+          <BookOpenIcon className="w-6 h-6" />
+        </button>
         <button
           onClick={onToggleConnections}
           className="p-2 rounded-full text-slate-400 hover:bg-slate-800 hover:text-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-colors"

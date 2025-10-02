@@ -1,16 +1,8 @@
 import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
-import type { Message } from "../App";
+import type { Message, Plugin } from "../App";
 
 // According to guidelines, initialize with a named parameter for the API key.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-// Local type to avoid circular dependencies
-interface Plugin {
-  power_name: string;
-  source: string;
-  category?: string;
-}
-
 
 const getChatHistory = (messages: Message[]) => {
   // Simple filter to remove system core messages from history passed to the model
@@ -40,22 +32,24 @@ export interface AgentStep {
   thought: string;
 }
 
-export const describePowers = async (plugins: Plugin[]): Promise<string> => {
+export const categorizePlugin = async (source: string, existingNames: string[]): Promise<Omit<Plugin, 'source'>> => {
   const model = 'gemini-2.5-flash';
+  
+  const allowedCategories = [
+    'Live Production', '3D Graphics', 'Video Editing', 'Audio Control',
+    'Live Streaming', 'Generative AI', 'Web Intelligence', 'Core Function', 'Utility'
+  ];
 
-  const prompt = `You are FuX, a Fusion Experience AI. You are accessing your arsenal of "Power Modules". For each of the following raw ingested modules, generate a unique, thematic, and cool-sounding "Designation" (name) and a brief, one-sentence "Function" (description). The designation should be concise and sound like a piece of advanced technology. The function should clearly but briefly explain what the module does based on its source.
+  const prompt = `You are FuX, a Fusion Experience AI. You are ingesting a new "Power Module" based on a user-provided concept. Analyze the concept and generate a unique, thematic "power_name", assign it a "category" from the provided list, and write a brief, one-sentence "description".
 
-- If the source is 'vmix', it's for live video production control.
-- If the source is 'blender', it's for 3D graphics and animation scripting.
-- If the source is related to video editing (like 'opencut'), it's for post-production.
-- If the source is 'spotify', it's for audio/music control.
-- If the source is 'twitch', it's for live stream management.
-- For other sources, infer its purpose.
+**Rules:**
+1.  **power_name:** Must be a single, concise word in lowerCamelCase (e.g., 'visionMixer', 'sceneBuilder'). It must not be a generic term like 'plugin' or 'module'. It must be unique and not one of the following existing names: ${JSON.stringify(existingNames)}.
+2.  **category:** Must be one of the following exact strings: ${JSON.stringify(allowedCategories)}.
+3.  **description:** A clear, one-sentence explanation of the module's function.
 
-Ingested Modules:
-${JSON.stringify(plugins, null, 2)}
+**User Concept:** "${source}"
 
-Provide the output as a JSON object that strictly adheres to the provided schema. Do not add any extra text or explanations outside of the JSON object.`;
+Provide the output as a JSON object that strictly adheres to the provided schema. Do not add any extra text or explanations.`;
 
   const response = await ai.models.generateContent({
     model,
@@ -65,29 +59,20 @@ Provide the output as a JSON object that strictly adheres to the provided schema
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          power_modules: {
-            type: Type.ARRAY,
-            description: "An array of described power modules.",
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                original_name: {
-                  type: Type.STRING,
-                  description: "The original name of the plugin, e.g., 'plugin_1'."
-                },
-                designation: {
-                  type: Type.STRING,
-                  description: "The new, creative name for the power module."
-                },
-                function: {
-                  type: Type.STRING,
-                  description: "A short, one-sentence description of what the module does."
-                }
-              },
-              required: ["original_name", "designation", "function"]
-            }
+          power_name: {
+            type: Type.STRING,
+            description: "A unique, lowerCamelCase name for the power."
+          },
+          category: {
+            type: Type.STRING,
+            description: "The category from the allowed list."
+          },
+          description: {
+            type: Type.STRING,
+            description: "A one-sentence description of the power."
           }
-        }
+        },
+        required: ["power_name", "category", "description"]
       }
     }
   });
@@ -96,23 +81,13 @@ Provide the output as a JSON object that strictly adheres to the provided schema
     const jsonText = response.text.trim();
     const parsed = JSON.parse(jsonText);
 
-    if (parsed.power_modules && Array.isArray(parsed.power_modules)) {
-      if (parsed.power_modules.length === 0) {
-        return "No Power Modules available to describe.";
-      }
-      let responseString = 'Available Power Modules:\n';
-      // Find the original plugin to display its source
-      const powerList = parsed.power_modules.map((mod: any) => {
-        const originalPlugin = plugins.find(p => p.power_name === mod.original_name);
-        const source = originalPlugin ? originalPlugin.source : 'Unknown';
-        return `- ${mod.designation}: ${mod.function} (Source: ${source})`;
-      }).join('\n');
-      return responseString + powerList;
+    if (parsed.power_name && parsed.category && parsed.description && allowedCategories.includes(parsed.category)) {
+      return parsed;
     }
-    throw new Error("Invalid power description structure received from AI.");
+    throw new Error("Invalid or incomplete data structure received from AI.");
   } catch (e) {
-    console.error("Failed to parse power descriptions:", e, "Raw response:", response.text);
-    throw new Error("The AI core failed to generate valid power descriptions.");
+    console.error("Failed to parse categorization:", e, "Raw response:", response.text);
+    throw new Error("The AI core failed to generate a valid module categorization.");
   }
 };
 

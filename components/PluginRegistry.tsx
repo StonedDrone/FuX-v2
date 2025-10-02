@@ -1,11 +1,6 @@
 import React from 'react';
 import { CloseIcon } from './icons/CloseIcon';
-
-interface Plugin {
-  power_name: string;
-  source: string;
-  category?: string;
-}
+import type { Plugin } from '../App';
 
 interface PluginRegistryProps {
   isOpen: boolean;
@@ -15,12 +10,15 @@ interface PluginRegistryProps {
 }
 
 const categoryColorMap: { [key: string]: string } = {
-  'Data': 'border-l-blue-400 hover:bg-blue-900/50 hover:border-blue-300',
+  'Live Production': 'border-l-rose-400 hover:bg-rose-900/50 hover:border-rose-300',
+  '3D Graphics': 'border-l-orange-400 hover:bg-orange-900/50 hover:border-orange-300',
+  'Video Editing': 'border-l-indigo-400 hover:bg-indigo-900/50 hover:border-indigo-300',
+  'Audio Control': 'border-l-emerald-400 hover:bg-emerald-900/50 hover:border-emerald-300',
+  'Live Streaming': 'border-l-purple-400 hover:bg-purple-900/50 hover:border-purple-300',
+  'Generative AI': 'border-l-amber-400 hover:bg-amber-900/50 hover:border-amber-300',
+  'Web Intelligence': 'border-l-sky-400 hover:bg-sky-900/50 hover:border-sky-300',
+  'Core Function': 'border-l-cyan-400 hover:bg-cyan-900/50 hover:border-cyan-300',
   'Utility': 'border-l-green-400 hover:bg-green-900/50 hover:border-green-300',
-  'Web': 'border-l-purple-400 hover:bg-purple-900/50 hover:border-purple-300',
-  'Robotics': 'border-l-rose-400 hover:bg-rose-900/50 hover:border-rose-300',
-  'AI/ML': 'border-l-amber-400 hover:bg-amber-900/50 hover:border-amber-300',
-  'System': 'border-l-indigo-400 hover:bg-indigo-900/50 hover:border-indigo-300',
   'General': 'border-l-slate-500 hover:bg-slate-700/50 hover:border-slate-400',
 };
 const defaultColor = 'border-l-slate-700 hover:bg-slate-700/50 hover:border-slate-500';
