@@ -6,6 +6,7 @@ import { ErrorDisplay } from './components/ErrorDisplay';
 import { ChatInterface } from './components/ChatInterface';
 import { openDB, DBSchema } from 'idb';
 import { PluginRegistry } from './components/PluginRegistry';
+import { Hud } from './components/Hud';
 import { GoogleGenAI, LiveServerMessage, Modality, Blob, LiveSession } from '@google/genai';
 
 export type Message = {
@@ -118,9 +119,12 @@ const App: React.FC = () => {
   const [plugins, setPlugins] = useState<any[]>([]);
   const [isRegistryOpen, setIsRegistryOpen] = useState(false);
 
-  // --- Voice State ---
+  // --- Voice & HUD State ---
   const [isListening, setIsListening] = useState(false);
   const [isSessionInitializing, setIsSessionInitializing] = useState(false);
+  const [liveTranscription, setLiveTranscription] = useState('');
+  const [activatingModule, setActivatingModule] = useState<string | null>(null);
+  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const sessionPromiseRef = useRef<Promise<LiveSession> | null>(null);
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
@@ -645,6 +649,10 @@ stdout_val + stderr_val
   const stopVoiceSession = useCallback(() => {
     setIsListening(false);
     setIsSessionInitializing(false);
+    setLiveTranscription('');
+
+    analyser?.disconnect();
+    setAnalyser(null);
 
     mediaStreamRef.current?.getTracks().forEach(track => track.stop());
     mediaStreamRef.current = null;
@@ -659,7 +667,7 @@ stdout_val + stderr_val
         sessionPromiseRef.current.then(session => session.close());
         sessionPromiseRef.current = null;
     }
-  }, []);
+  }, [analyser]);
 
   const handleToggleVoice = useCallback(async () => {
     if (isListening) {
@@ -672,7 +680,13 @@ stdout_val + stderr_val
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
       
-      inputAudioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      const inputAudioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      inputAudioContextRef.current = inputAudioCtx;
+      
+      const analyserNode = inputAudioCtx.createAnalyser();
+      analyserNode.fftSize = 256;
+      setAnalyser(analyserNode);
+
       outputAudioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
       nextStartTimeRef.current = 0;
       sourcesRef.current.clear();
@@ -698,12 +712,14 @@ stdout_val + stderr_val
                 session.sendRealtimeInput({ media: pcmBlob });
               });
             };
-            source.connect(scriptProcessor);
+            source.connect(analyserNode);
+            analyserNode.connect(scriptProcessor);
             scriptProcessor.connect(inputAudioContextRef.current!.destination);
           },
           onmessage: async (message: LiveServerMessage) => {
             if (message.serverContent?.inputTranscription) {
               inputTranscriptionRef.current += message.serverContent.inputTranscription.text;
+              setLiveTranscription(inputTranscriptionRef.current);
               setInput(inputTranscriptionRef.current);
             }
             if (message.serverContent?.outputTranscription) {
@@ -725,14 +741,25 @@ stdout_val + stderr_val
             if (message.serverContent?.turnComplete) {
               const finalInput = inputTranscriptionRef.current;
               const finalOutput = outputTranscriptionRef.current;
+
+              if (finalInput.trim().startsWith('/run')) {
+                const moduleName = finalInput.trim().split(/\s+/)[1];
+                if (moduleName) {
+                  setActivatingModule(moduleName);
+                  setTimeout(() => setActivatingModule(null), 4000); // Clear after 4s
+                }
+              }
+
               if (finalOutput.trim()) {
                 addFuxMessage(finalOutput);
               }
               if (finalInput.trim()) {
                 handleSendMessage(finalInput);
               }
+
               inputTranscriptionRef.current = '';
               outputTranscriptionRef.current = '';
+              setLiveTranscription('');
             }
           },
           onerror: (e: ErrorEvent) => {
@@ -805,6 +832,13 @@ stdout_val + stderr_val
         plugins={plugins}
         onPluginSelect={handlePluginSelect}
         onClose={toggleRegistry}
+      />
+      <Hud
+        isListening={isListening}
+        isInitializing={isSessionInitializing}
+        liveTranscription={liveTranscription}
+        activatingModule={activatingModule}
+        analyser={analyser}
       />
     </div>
   );
