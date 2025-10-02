@@ -110,7 +110,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage
   if (role === 'system_core') {
     return (
       <div className="flex justify-center my-2">
-        <div className="w-full max-w-xl lg:max-w-2xl px-4 py-2 rounded-lg bg-slate-900 border border-amber-500/30">
+        <div className="w-11/12 max-w-xl lg:max-w-2xl px-4 py-2 rounded-lg bg-slate-900 border border-amber-500/30">
           <p className="text-xs font-bold text-amber-400 mb-1 tracking-wider">[SYSTEM CORE LOG]</p>
           <pre className="whitespace-pre-wrap font-mono text-xs text-slate-300">
             {displayedText}
@@ -129,7 +129,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage
 
   return (
     <div className={`flex ${messageAlignment}`}>
-      <div className={`max-w-xl lg:max-w-2xl px-4 py-2 rounded-lg ${bubbleStyles}`}>
+      <div className={`max-w-[85%] sm:max-w-xl lg:max-w-2xl px-4 py-2 rounded-lg ${bubbleStyles}`}>
         <pre className="whitespace-pre-wrap font-mono text-sm">
           {displayedText.split('\n').map((line, index) => (
             <React.Fragment key={index}>

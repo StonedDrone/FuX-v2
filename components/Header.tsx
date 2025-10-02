@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { TtsToggle } from './TtsToggle';
 import { RegistryIcon } from './icons/RegistryIcon';
@@ -18,9 +19,10 @@ export const Header: React.FC<HeaderProps> = ({ onToggleRegistry, isTtsEnabled, 
     <header className="flex justify-between items-center p-4 border-b border-slate-800">
       <div className="text-center">
         <h1 className="text-xl font-bold text-cyan-400 tracking-wider">FuX</h1>
-        <h2 className="text-xs text-slate-500 tracking-widest">FUSION EXPERIENCE AI</h2>
+        <h2 className="text-xs text-slate-500 tracking-widest hidden sm:block">FUSION EXPERIENCE AI</h2>
       </div>
       <div className="flex items-center space-x-2">
+        {/* FIX: The `onToggle` prop for TtsToggle should be passed the `onToggleTts` function from Header's props. */}
         <TtsToggle isEnabled={isTtsEnabled} onToggle={onToggleTts} />
         <button
           onClick={onTogglePowersGuide}

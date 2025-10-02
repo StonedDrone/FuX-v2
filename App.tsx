@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ChatInterface } from './components/ChatInterface';
 import { Header } from './components/Header';
@@ -684,7 +685,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="bg-slate-950 text-slate-300 font-sans min-h-screen flex flex-col items-center">
+    <div className="bg-slate-950 text-slate-300 font-sans h-screen overflow-hidden flex flex-col items-center">
       <Hud 
         isListening={isListening}
         isInitializing={isSessionInitializing}
@@ -692,7 +693,7 @@ const App: React.FC = () => {
         activatingModule={currentTask}
         analyser={analyser}
       />
-      <div className="w-full max-w-4xl mx-auto p-4 flex flex-col flex-grow">
+      <div className="w-full max-w-4xl mx-auto p-2 md:p-4 flex flex-col flex-grow h-full">
         <Header 
           onToggleRegistry={() => setIsPluginRegistryOpen(p => !p)}
           isTtsEnabled={isTtsEnabled}
@@ -701,7 +702,7 @@ const App: React.FC = () => {
           onTogglePowersGuide={() => setIsPowersGuideOpen(p => !p)}
         />
         {error && <ErrorDisplay message={error} />}
-        <main className="flex-grow">
+        <main className="flex-grow min-h-0">
           <ChatInterface
             messages={messages}
             input={input}
@@ -728,6 +729,7 @@ const App: React.FC = () => {
         onClose={() => setIsConnectionsPanelOpen(false)}
       />
       <PowersGuide
+        // FIX: The `isOpen` prop for PowersGuide should be controlled by the `isPowersGuideOpen` state variable.
         isOpen={isPowersGuideOpen}
         plugins={plugins}
         onClose={() => setIsPowersGuideOpen(false)}

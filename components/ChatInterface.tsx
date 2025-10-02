@@ -105,7 +105,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const isDisabled = isReplying || isListening || isSessionInitializing;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-200px)] max-h-[700px] w-full mt-6 border border-slate-700 bg-slate-900/50 rounded-lg overflow-hidden">
+    <div className="flex flex-col h-full w-full mt-4 md:mt-6 border border-slate-700 bg-slate-900/50 rounded-lg overflow-hidden">
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((msg, index) => (
           <ChatMessage 

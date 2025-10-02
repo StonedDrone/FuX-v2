@@ -438,20 +438,20 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
                         </div>
                     ) : (
                         <div className="space-y-3">
-                            <div className="flex space-x-2">
+                            <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
                                 <input
                                     type="text"
                                     value={vMixHost}
                                     onChange={(e) => setVMixHost(e.target.value)}
                                     placeholder="Host (e.g., 127.0.0.1)"
-                                    className="w-2/3 bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                    className="w-full sm:w-2/3 bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                                 />
                                 <input
                                     type="text"
                                     value={vMixPort}
                                     onChange={(e) => setVMixPort(e.target.value)}
                                     placeholder="Port"
-                                    className="w-1/3 bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                    className="w-full sm:w-1/3 bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                                 />
                             </div>
                             <button 
@@ -509,20 +509,20 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
                         </div>
                     ) : (
                         <div className="space-y-3">
-                            <div className="flex space-x-2">
+                           <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
                                 <input
                                     type="text"
                                     value={blenderHost}
                                     onChange={(e) => setBlenderHost(e.target.value)}
                                     placeholder="Host (e.g., 127.0.0.1)"
-                                    className="w-2/3 bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                    className="w-full sm:w-2/3 bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                                 />
                                 <input
                                     type="text"
                                     value={blenderPort}
                                     onChange={(e) => setBlenderPort(e.target.value)}
                                     placeholder="Port"
-                                    className="w-1/3 bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                    className="w-full sm:w-1/3 bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                                 />
                             </div>
                             <button 
@@ -560,20 +560,20 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
                         </div>
                     ) : (
                         <div className="space-y-3">
-                            <div className="flex space-x-2">
+                            <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
                                 <input
                                     type="text"
                                     value={videoHost}
                                     onChange={(e) => setVideoHost(e.target.value)}
                                     placeholder="Host (e.g., 127.0.0.1)"
-                                    className="w-2/3 bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                    className="w-full sm:w-2/3 bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                                 />
                                 <input
                                     type="text"
                                     value={videoPort}
                                     onChange={(e) => setVideoPort(e.target.value)}
                                     placeholder="Port"
-                                    className="w-1/3 bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                    className="w-full sm:w-1/3 bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                                 />
                             </div>
                             <button 
@@ -640,7 +640,7 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
           {/* Creator Network */}
           <div>
             <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">Creator Network</h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <a href="https://www.linkedin.com/" target="_blank" rel="noopener noreferrer" className="flex items-center space-x-3 group p-3 rounded-lg bg-slate-800/50 border border-slate-700 hover:border-cyan-400 hover:bg-slate-800 transition-all">
                 <LinkedInIcon className="w-6 h-6 text-slate-400 group-hover:text-[#0A66C2] transition-colors" />
                 <div>
