@@ -1,119 +1,99 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FuX // Power Module Interface</title>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FuX: Power Module Interface</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Black+Ops+One&display=swap" rel="stylesheet">
+    <script type="importmap">
+    {
+      "imports": {
+        "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+        "@google/genai": "https://aistudiocdn.com/@google/genai@^1.21.0",
+        "react/": "https://aistudiocdn.com/react@^19.2.0/",
+        "react": "https://aistudiocdn.com/react@^19.2.0"
+      }
+    }
+    </script>
     <style>
       body {
-        font-family: 'Roboto Mono', monospace;
+        overscroll-behavior: none;
       }
-      .font-urban {
-        font-family: 'Black Ops One', cursive;
+      ::-webkit-scrollbar {
+        width: 8px;
       }
-      .glitch-text::before {
-        content: attr(data-text);
-        position: absolute;
-        top: 0;
-        left: -2px;
-        width: 100%;
-        color: #00ffff;
-        overflow: hidden;
-        clip: rect(0, 900px, 0, 0);
-        animation: glitch-anim-1 2s infinite linear alternate-reverse;
-        text-shadow: -1px 0 #ff00ff;
+      ::-webkit-scrollbar-track {
+        background: #1e293b;
       }
-      .glitch-text::after {
-        content: attr(data-text);
-        position: absolute;
-        top: 0;
-        left: 2px;
-        width: 100%;
-        color: #ff00ff;
-        overflow: hidden;
-        clip: rect(0, 900px, 0, 0);
-        animation: glitch-anim-2 3s infinite linear alternate-reverse;
-        text-shadow: 1px 0 #00ffff;
+      ::-webkit-scrollbar-thumb {
+        background: #475569;
+        border-radius: 4px;
       }
-      @keyframes glitch-anim-1 {
-        0% { clip: rect(42px, 9999px, 44px, 0); }
-        5% { clip: rect(12px, 9999px, 60px, 0); }
-        10% { clip: rect(40px, 9999px, 40px, 0); }
-        /* ... more steps ... */
-        100% { clip: rect(50px, 9999px, 95px, 0); }
-      }
-      @keyframes glitch-anim-2 {
-        0% { clip: rect(20px, 9999px, 90px, 0); }
-        /* ... more steps ... */
-        100% { clip: rect(10px, 9999px, 90px, 0); }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #64748b;
       }
       
-      /* --- AR HUD Styles --- */
+      /* HUD Styles */
       .hud {
         position: fixed;
-        bottom: 20px;
-        left: 20px;
+        bottom: 1rem;
+        left: 1rem;
         width: 350px;
-        background: rgba(10, 20, 30, 0.7);
-        border: 1px solid rgba(0, 255, 255, 0.3);
-        backdrop-filter: blur(5px);
-        -webkit-backdrop-filter: blur(5px);
-        color: #00ffff;
-        font-family: 'Roboto Mono', monospace;
-        padding: 1rem;
+        background-color: rgba(15, 23, 42, 0.8); /* bg-slate-900 with opacity */
+        border: 1px solid #334155; /* border-slate-700 */
+        color: #94a3b8; /* text-slate-400 */
+        padding: 0.75rem;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 0.8rem;
         z-index: 100;
         clip-path: polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%);
         opacity: 0;
-        transform: translateX(-100%);
-        transition: opacity 0.5s ease, transform 0.5s ease;
+        transform: translateY(20px);
+        transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+        backdrop-filter: blur(5px);
+        -webkit-backdrop-filter: blur(5px);
       }
+
       .hud.visible {
         opacity: 1;
-        transform: translateX(0);
+        transform: translateY(0);
       }
+
       .hud-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        text-transform: uppercase;
-        font-size: 0.75rem;
-        letter-spacing: 0.1em;
-        border-bottom: 1px solid rgba(0, 255, 255, 0.2);
+        border-bottom: 1px solid #475569; /* border-slate-600 */
         padding-bottom: 0.5rem;
         margin-bottom: 0.5rem;
+        font-weight: bold;
+        color: #00ffff; /* cyan */
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
       }
+
       .hud-status-dot {
         width: 8px;
         height: 8px;
         border-radius: 50%;
+        margin-right: 0.5rem;
         display: inline-block;
-        margin-right: 8px;
       }
+
       @keyframes pulse {
-        0%, 100% { opacity: 1; box-shadow: 0 0 3px currentColor; }
-        50% { opacity: 0.6; box-shadow: none; }
+        0%, 100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.5;
+          transform: scale(1.1);
+        }
       }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.20.0",
-    "react/": "https://aistudiocdn.com/react@^19.1.1/",
-    "react": "https://aistudiocdn.com/react@^19.1.1",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
-    "idb": "https://aistudiocdn.com/idb@^8.0.3"
-  }
-}
-</script>
 </head>
-  <body class="bg-black text-slate-200">
+<body class="bg-slate-950">
     <div id="root"></div>
-    <script src="https://cdn.jsdelivr.net/pyodide/v0.25.1/full/pyodide.js"></script>
     <script type="module" src="/index.tsx"></script>
-  </body>
+</body>
 </html>

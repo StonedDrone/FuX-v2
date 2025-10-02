@@ -1,22 +1,33 @@
 import React from 'react';
 import { TtsToggle } from './TtsToggle';
 import { RegistryIcon } from './icons/RegistryIcon';
+import { PlugIcon } from './icons/PlugIcon';
+
 
 interface HeaderProps {
+  onToggleRegistry: () => void;
   isTtsEnabled: boolean;
   onToggleTts: () => void;
-  onToggleRegistry: () => void;
+  onToggleConnections: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ isTtsEnabled, onToggleTts, onToggleRegistry }) => {
+export const Header: React.FC<HeaderProps> = ({ onToggleRegistry, isTtsEnabled, onToggleTts, onToggleConnections }) => {
   return (
-    <header className="text-center relative">
-      <h1 className="text-4xl sm:text-5xl font-bold relative inline-block font-urban">
-        <span className="glitch-text" data-text="FuX">FuX</span>
-      </h1>
-      <p className="mt-2 text-slate-400 text-sm sm:text-base">System-Integrated Sentinel // Power Module Interface</p>
-      <div className="absolute top-0 right-0 h-full flex items-center space-x-2">
+    <header className="flex justify-between items-center p-4 border-b border-slate-800">
+      <div className="text-center">
+        <h1 className="text-xl font-bold text-cyan-400 tracking-wider">FuX</h1>
+        <h2 className="text-xs text-slate-500 tracking-widest">FUSION EXPERIENCE AI</h2>
+      </div>
+      <div className="flex items-center space-x-2">
         <TtsToggle isEnabled={isTtsEnabled} onToggle={onToggleTts} />
+        <button
+          onClick={onToggleConnections}
+          className="p-2 rounded-full text-slate-400 hover:bg-slate-800 hover:text-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-colors"
+          aria-label="Toggle Connections Panel"
+          title="Toggle Connections Panel"
+        >
+          <PlugIcon className="w-6 h-6" />
+        </button>
         <button
           onClick={onToggleRegistry}
           className="p-2 rounded-full text-slate-400 hover:bg-slate-800 hover:text-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-colors"
