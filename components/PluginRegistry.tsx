@@ -1,5 +1,6 @@
 import React from 'react';
 import { CloseIcon } from './icons/CloseIcon';
+import { StarIcon } from './icons/StarIcon';
 import type { Plugin } from '../App';
 
 interface PluginRegistryProps {
@@ -7,6 +8,7 @@ interface PluginRegistryProps {
   plugins: Plugin[];
   onPluginSelect: (powerName: string) => void;
   onClose: () => void;
+  favoritePowers: Set<string>;
 }
 
 const categoryColorMap: { [key: string]: string } = {
@@ -23,7 +25,7 @@ const categoryColorMap: { [key: string]: string } = {
 };
 const defaultColor = 'border-l-slate-700 hover:bg-slate-700/50 hover:border-slate-500';
 
-export const PluginRegistry: React.FC<PluginRegistryProps> = ({ isOpen, plugins, onPluginSelect, onClose }) => {
+export const PluginRegistry: React.FC<PluginRegistryProps> = ({ isOpen, plugins, onPluginSelect, onClose, favoritePowers }) => {
   return (
     <>
       <div 
@@ -50,6 +52,7 @@ export const PluginRegistry: React.FC<PluginRegistryProps> = ({ isOpen, plugins,
             <ul className="space-y-2">
               {plugins.map((plugin) => {
                 const colorClass = categoryColorMap[plugin.category || ''] || defaultColor;
+                const isFavorite = favoritePowers.has(plugin.power_name);
                 return (
                   <li key={plugin.power_name}>
                     <button
@@ -57,7 +60,10 @@ export const PluginRegistry: React.FC<PluginRegistryProps> = ({ isOpen, plugins,
                       className={`w-full text-left p-3 rounded-lg bg-slate-800/50 border-l-4 transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500 ${colorClass}`}
                     >
                       <div className="flex justify-between items-center">
-                        <p className="font-bold text-slate-100">{plugin.power_name}</p>
+                        <div className="flex items-center space-x-2">
+                          {isFavorite && <StarIcon className="w-4 h-4 text-yellow-400 flex-shrink-0" filled />}
+                          <p className="font-bold text-slate-100">{plugin.power_name}</p>
+                        </div>
                         {plugin.category && <p className="text-xs text-slate-400 bg-slate-700/50 px-2 py-0.5 rounded">{plugin.category}</p>}
                       </div>
                       <p className="text-xs text-slate-400 truncate mt-1">Source: {plugin.source}</p>

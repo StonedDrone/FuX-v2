@@ -1,14 +1,20 @@
 import React, { useState, useMemo } from 'react';
 import { CloseIcon } from './icons/CloseIcon';
+import { DeployIcon } from './icons/DeployIcon';
+import { StarIcon } from './icons/StarIcon';
 import type { Plugin } from '../App';
 
 interface PowersGuideProps {
   isOpen: boolean;
   plugins: Plugin[];
   onClose: () => void;
+  onDeployPower: (powerName: string) => void;
+  favoritePowers: Set<string>;
+  onToggleFavorite: (powerName: string) => void;
 }
 
 const categoryColorMap: { [key: string]: { border: string, bg: string, text: string } } = {
+  'Favorites': { border: 'border-yellow-400', bg: 'bg-yellow-900/50', text: 'text-yellow-300' },
   'Live Production': { border: 'border-rose-400', bg: 'bg-rose-900/50', text: 'text-rose-300' },
   '3D Graphics': { border: 'border-orange-400', bg: 'bg-orange-900/50', text: 'text-orange-300' },
   'Video Editing': { border: 'border-indigo-400', bg: 'bg-indigo-900/50', text: 'text-indigo-300' },
@@ -28,23 +34,116 @@ const ChevronDownIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
   </svg>
 );
 
+interface PowerItemProps {
+  plugin: Plugin;
+  isFavorite: boolean;
+  onDeployPower: (powerName: string) => void;
+  onToggleFavorite: (powerName: string) => void;
+}
 
-export const PowersGuide: React.FC<PowersGuideProps> = ({ isOpen, plugins, onClose }) => {
-  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
+const PowerItem: React.FC<PowerItemProps> = ({ plugin, isFavorite, onDeployPower, onToggleFavorite }) => (
+  <li className="p-2 bg-slate-900/70 rounded-md">
+    <div className="flex justify-between items-start">
+      <div className="flex items-start space-x-2">
+         <button
+          onClick={() => onToggleFavorite(plugin.power_name)}
+          className="p-1 text-slate-500 hover:text-yellow-400 transition-colors flex-shrink-0"
+          title={isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}
+        >
+          <StarIcon className="w-4 h-4" filled={isFavorite} />
+        </button>
+        <div>
+          <p className="font-bold text-slate-200 font-mono text-sm">{plugin.power_name}</p>
+          <p className="text-xs text-slate-400 mt-1">{plugin.description}</p>
+        </div>
+      </div>
+      <button
+        onClick={() => onDeployPower(plugin.power_name)}
+        className="ml-2 flex-shrink-0 flex items-center space-x-1.5 px-2 py-1 text-xs rounded-md bg-cyan-600/50 text-cyan-200 hover:bg-cyan-600/80 transition-colors"
+        title={`Deploy ${plugin.power_name}`}
+      >
+        <DeployIcon className="w-3 h-3" />
+        <span>Deploy</span>
+      </button>
+    </div>
+  </li>
+);
 
-  const groupedPlugins = useMemo(() => {
-    return plugins.reduce((acc, plugin) => {
-      const category = plugin.category || 'General';
-      if (!acc[category]) {
-        acc[category] = [];
+
+export const PowersGuide: React.FC<PowersGuideProps> = ({ isOpen, plugins, onClose, onDeployPower, favoritePowers, onToggleFavorite }) => {
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['Favorites']));
+
+  const { favoritePlugins, categorizedPlugins } = useMemo(() => {
+    const favorites: Plugin[] = [];
+    const categorized: Record<string, Plugin[]> = {};
+
+    for (const plugin of plugins) {
+      if (favoritePowers.has(plugin.power_name)) {
+        favorites.push(plugin);
       }
-      acc[category].push(plugin);
-      return acc;
-    }, {} as Record<string, Plugin[]>);
-  }, [plugins]);
+      const category = plugin.category || 'General';
+      if (!categorized[category]) {
+        categorized[category] = [];
+      }
+      categorized[category].push(plugin);
+    }
+    
+    // Sort favorites alphabetically
+    favorites.sort((a, b) => a.power_name.localeCompare(b.power_name));
+    
+    // Sort categorized plugins alphabetically within each category
+    for (const category in categorized) {
+        categorized[category].sort((a, b) => a.power_name.localeCompare(b.power_name));
+    }
+
+    return { favoritePlugins: favorites, categorizedPlugins: categorized };
+  }, [plugins, favoritePowers]);
 
   const toggleCategory = (category: string) => {
-    setExpandedCategory(prev => (prev === category ? null : category));
+    setExpandedCategories(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(category)) {
+        newSet.delete(category);
+      } else {
+        newSet.add(category);
+      }
+      return newSet;
+    });
+  };
+
+  const renderCategory = (category: string, powers: Plugin[], isFavoritesSection = false) => {
+    const colors = categoryColorMap[category] || defaultColor;
+    const isExpanded = expandedCategories.has(category);
+    if (!powers || powers.length === 0) return null;
+
+    return (
+      <div key={category} className={`rounded-lg ${colors.bg} border ${colors.border.replace('-l-4', '')}`}>
+        <button
+          onClick={() => toggleCategory(category)}
+          className="w-full flex justify-between items-center p-3 text-left focus:outline-none"
+          aria-expanded={isExpanded}
+        >
+          <div className="flex items-center space-x-2">
+            {isFavoritesSection && <StarIcon className={`w-5 h-5 ${colors.text}`} filled />}
+            <h3 className={`font-bold ${colors.text}`}>{category}</h3>
+          </div>
+          <ChevronDownIcon className={`w-5 h-5 text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+        </button>
+        <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-[500px]' : 'max-h-0'}`}>
+          <ul className="p-3 pt-0 space-y-2">
+            {(powers as Plugin[]).map(plugin => (
+              <PowerItem
+                key={plugin.power_name}
+                plugin={plugin}
+                isFavorite={favoritePowers.has(plugin.power_name)}
+                onDeployPower={onDeployPower}
+                onToggleFavorite={onToggleFavorite}
+              />
+            ))}
+          </ul>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -71,32 +170,10 @@ export const PowersGuide: React.FC<PowersGuideProps> = ({ isOpen, plugins, onClo
             <p className="text-slate-500 text-center mt-8">No Power Modules ingested. Use the <code className="bg-slate-800 px-1 rounded">/ingest</code> command.</p>
           ) : (
             <div className="space-y-3">
-              {Object.entries(groupedPlugins).map(([category, powers]) => {
-                const colors = categoryColorMap[category] || defaultColor;
-                const isExpanded = expandedCategory === category;
-                return (
-                  <div key={category} className={`rounded-lg ${colors.bg} border ${colors.border.replace('-l-4', '')}`}>
-                    <button
-                      onClick={() => toggleCategory(category)}
-                      className="w-full flex justify-between items-center p-3 text-left focus:outline-none"
-                      aria-expanded={isExpanded}
-                    >
-                      <h3 className={`font-bold ${colors.text}`}>{category}</h3>
-                      <ChevronDownIcon className={`w-5 h-5 text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
-                    </button>
-                    <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-96' : 'max-h-0'}`}>
-                      <ul className="p-3 pt-0 space-y-2">
-                        {powers.map(plugin => (
-                          <li key={plugin.power_name} className="p-2 bg-slate-900/70 rounded-md">
-                            <p className="font-bold text-slate-200 font-mono text-sm">{plugin.power_name}</p>
-                            <p className="text-xs text-slate-400 mt-1">{plugin.description}</p>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                );
-              })}
+              {renderCategory('Favorites', favoritePlugins, true)}
+              {Object.entries(categorizedPlugins)
+                .sort(([catA], [catB]) => catA.localeCompare(catB))
+                .map(([category, powers]) => renderCategory(category, powers))}
             </div>
           )}
         </div>

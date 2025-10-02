@@ -7,7 +7,7 @@ import { ConnectionsPanel } from './components/ConnectionsPanel';
 import { ErrorDisplay } from './components/ErrorDisplay';
 import { PowersGuide } from './components/PowersGuide';
 import { analyzeCode, executeCode, generateImage, googleSearch, createExecutionPlan, categorizePlugin, AgentStep } from './services/geminiService';
-import { GoogleGenAI, LiveServerMessage, Modality, Blob } from '@google/genai';
+import { GoogleGenAI, LiveServerMessage, Modality, Blob } from '@google/ai-studio-static';
 import { vmixService } from './services/vmixService';
 import { blenderService } from './services/blenderService';
 import { videoService } from './services/videoService';
@@ -58,6 +58,7 @@ const App: React.FC = () => {
 
   // Plugin State
   const [plugins, setPlugins] = useState<Plugin[]>([]);
+  const [favoritePowers, setFavoritePowers] = useState<Set<string>>(new Set());
 
   // Voice State
   const [isListening, setIsListening] = useState(false);
@@ -74,6 +75,28 @@ const App: React.FC = () => {
   const sourcesRef = useRef(new Set<AudioBufferSourceNode>());
   const nextStartTimeRef = useRef(0);
   const currentInputTranscriptionRef = useRef('');
+
+  useEffect(() => {
+    // Load favorites from localStorage on initial mount
+    try {
+      const storedFavorites = localStorage.getItem('fux_favorite_powers');
+      if (storedFavorites) {
+        setFavoritePowers(new Set(JSON.parse(storedFavorites)));
+      }
+    } catch (e) {
+      console.error("Failed to load favorite powers from localStorage", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Save favorites to localStorage whenever they change
+    try {
+      localStorage.setItem('fux_favorite_powers', JSON.stringify(Array.from(favoritePowers)));
+    } catch (e) {
+      console.error("Failed to save favorite powers to localStorage", e);
+    }
+  }, [favoritePowers]);
+
 
   const addMessage = (message: Message) => {
     setMessages(prev => [...prev, message]);
@@ -643,6 +666,23 @@ const App: React.FC = () => {
     setIsPluginRegistryOpen(false);
   }
 
+  const handleDeployPower = (powerName: string) => {
+    setInput(`/use ${powerName} <arguments>`);
+    setIsPowersGuideOpen(false);
+  }
+  
+  const handleToggleFavorite = (powerName: string) => {
+    setFavoritePowers(prev => {
+      const newFavorites = new Set(prev);
+      if (newFavorites.has(powerName)) {
+        newFavorites.delete(powerName);
+      } else {
+        newFavorites.add(powerName);
+      }
+      return newFavorites;
+    });
+  };
+
   return (
     <div className="bg-slate-950 text-slate-300 font-sans min-h-screen flex flex-col items-center">
       <Hud 
@@ -681,6 +721,7 @@ const App: React.FC = () => {
         plugins={plugins}
         onPluginSelect={handlePluginSelect}
         onClose={() => setIsPluginRegistryOpen(false)}
+        favoritePowers={favoritePowers}
       />
       <ConnectionsPanel
         isOpen={isConnectionsPanelOpen}
@@ -690,6 +731,9 @@ const App: React.FC = () => {
         isOpen={isPowersGuideOpen}
         plugins={plugins}
         onClose={() => setIsPowersGuideOpen(false)}
+        onDeployPower={handleDeployPower}
+        favoritePowers={favoritePowers}
+        onToggleFavorite={handleToggleFavorite}
       />
     </div>
   );
