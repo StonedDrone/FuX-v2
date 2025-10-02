@@ -1,4 +1,3 @@
-
 import type { Message } from '../App';
 
 const LMSTUDIO_BASE_URL = 'http://localhost:1234/v1';
@@ -140,4 +139,16 @@ export const startChat = async (fileContent: string, fileName: string): Promise<
 export const continueChat = async (history: Message[]): Promise<string> => {
     const formattedHistory = formatHistoryForAPI(history);
     return callLMStudio(formattedHistory);
+};
+
+export const getPowerSummary = async (codeContent: string): Promise<string> => {
+  const userPrompt = `Analyze the following content and provide a concise, one-sentence summary of its core function or purpose. Focus on what it *does*.
+
+Content to analyze:
+---
+${codeContent.substring(0, 3000)}
+---
+`;
+  const messages = [{ role: 'user', content: userPrompt }];
+  return callLMStudio(messages);
 };

@@ -1,19 +1,21 @@
-
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { ChatMessage } from './ChatMessage';
 import { SendIcon } from './icons/SendIcon';
 import type { Message } from '../App';
 
 interface ChatInterfaceProps {
   messages: Message[];
-  onSendMessage: (message: string) => void;
+  input: string;
+  setInput: (value: string) => void;
+  onSendMessage: () => void;
   isReplying: boolean;
+  currentTask: string | null;
   isTtsEnabled: boolean;
 }
 
-export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, isReplying, isTtsEnabled }) => {
-  const [input, setInput] = useState('');
+export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, input, setInput, onSendMessage, isReplying, currentTask, isTtsEnabled }) => {
   const messagesEndRef = useRef<null | HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -23,12 +25,18 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMe
     // A slight delay to allow the DOM to update before scrolling
     setTimeout(scrollToBottom, 100);
   }, [messages]);
+  
+  useEffect(() => {
+    // When input is programmatically changed from the registry, focus the textarea
+    if (input.startsWith('/run')) {
+      inputRef.current?.focus();
+    }
+  }, [input]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (input.trim() && !isReplying) {
-      onSendMessage(input.trim());
-      setInput('');
+      onSendMessage();
     }
   };
 
@@ -50,7 +58,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMe
             isTtsEnabled={isTtsEnabled}
           />
         ))}
-        {isReplying && messages[messages.length-1]?.role !== 'fux' && (
+        {isReplying && currentTask && (
+          <div className="flex justify-start">
+            <div className="flex items-center space-x-3 p-4">
+              <div className="w-6 h-6 border-4 border-dashed rounded-full animate-spin border-cyan-400"></div>
+              <p className="text-sm text-slate-400">{currentTask}</p>
+            </div>
+          </div>
+        )}
+        {isReplying && !currentTask && messages[messages.length-1]?.role !== 'fux' && (
           <div className="flex justify-start">
              <div className="flex items-center space-x-2 p-4">
                 <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
@@ -64,10 +80,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMe
       <div className="p-4 border-t border-slate-700 bg-slate-900">
         <form onSubmit={handleSubmit} className="flex items-center space-x-2">
           <textarea
+            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Engage with FuX... try /ingest, /run, /list"
+            placeholder="Engage with FuX... or use /help"
             rows={1}
             className="flex-1 bg-slate-800 border border-slate-600 rounded-lg p-2 text-slate-200 resize-none focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all"
             disabled={isReplying}
