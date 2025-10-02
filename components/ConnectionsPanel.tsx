@@ -20,6 +20,7 @@ import { BlenderIcon } from './icons/BlenderIcon';
 import { VideoIcon } from './icons/VideoIcon';
 import { SpotifyIcon } from './icons/SpotifyIcon';
 import { spotifyService } from '../services/spotifyService';
+import { twitchService } from '../services/twitchService';
 
 
 interface ConnectionsPanelProps {
@@ -68,6 +69,11 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
   const [isSpotifyConnected, setIsSpotifyConnected] = useState(false);
   const [isSpotifyConnecting, setIsSpotifyConnecting] = useState(false);
   const [spotifyError, setSpotifyError] = useState<string | null>(null);
+  
+  // Twitch State
+  const [twitchStreamKey, setTwitchStreamKey] = useState('');
+  const [isTwitchKeySaved, setIsTwitchKeySaved] = useState(false);
+  const [isTwitchKeyVisible, setIsTwitchKeyVisible] = useState(false);
 
 
   // Load saved API keys and settings from localStorage on component mount
@@ -96,6 +102,16 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
     if (spotifyAccount) {
       setIsSpotifyConnected(true);
     }
+
+    const savedTwitchKey = twitchService.getStreamKey();
+    if (savedTwitchKey) {
+      setTwitchStreamKey(savedTwitchKey);
+      setIsTwitchKeySaved(true);
+    } else {
+      // Pre-fill with the key from the user's prompt as a convenience
+      setTwitchStreamKey('live_484288535_zGSHcaJnrqIkoqqo8DyLjRDk4HgMLv');
+    }
+
   }, []);
 
   useEffect(() => {
@@ -246,6 +262,17 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
     await spotifyService.logout();
     setIsSpotifyConnected(false);
   };
+  
+  const handleSaveTwitchKey = () => {
+    twitchService.setStreamKey(twitchStreamKey);
+    setIsTwitchKeySaved(true);
+  };
+
+  const handleClearTwitchKey = () => {
+    twitchService.clearStreamKey();
+    setTwitchStreamKey('');
+    setIsTwitchKeySaved(false);
+  };
 
 
   return (
@@ -334,6 +361,54 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
               </div>
             </div>
           </div>
+          
+          {/* Streaming Services */}
+          <div>
+            <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">Streaming Services</h3>
+            <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700">
+              <div className="flex justify-between items-center">
+                 <div className="flex items-center space-x-3">
+                    <TwitchIcon className="w-5 h-5 text-slate-300"/>
+                    <p className="font-bold text-slate-100">Twitch</p>
+                 </div>
+                <div className={`w-3 h-3 rounded-full ${isTwitchKeySaved ? 'bg-green-500' : 'bg-slate-500'}`}></div>
+              </div>
+              <p className="text-xs text-slate-400 mt-1 mb-4">Provide a stream key to broadcast via vMix.</p>
+               <div className="relative flex items-center mb-3">
+                <input
+                  type={isTwitchKeyVisible ? 'text' : 'password'}
+                  value={twitchStreamKey}
+                  onChange={(e) => setTwitchStreamKey(e.target.value)}
+                  placeholder="Enter your stream key..."
+                  className="w-full bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 pr-10"
+                />
+                <button
+                  onClick={() => setIsTwitchKeyVisible(prev => !prev)}
+                  className="absolute right-2 text-slate-400 hover:text-slate-200"
+                  aria-label={isTwitchKeyVisible ? 'Hide stream key' : 'Show stream key'}
+                >
+                  {isTwitchKeyVisible ? <EyeOffIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
+                </button>
+              </div>
+              <div className="flex space-x-2">
+                <button 
+                  onClick={handleSaveTwitchKey}
+                  disabled={!twitchStreamKey}
+                  className="flex-1 py-2 px-4 text-sm font-semibold rounded-md bg-cyan-600/50 text-cyan-200 hover:bg-cyan-600/80 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-colors"
+                >
+                  Save
+                </button>
+                <button 
+                  onClick={handleClearTwitchKey}
+                  disabled={!isTwitchKeySaved}
+                  className="flex-1 py-2 px-4 text-sm font-semibold rounded-md bg-rose-600/50 text-rose-200 hover:bg-rose-600/80 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-colors"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          </div>
+
 
           {/* Local Software Integrations */}
           <div>

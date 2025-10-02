@@ -12,6 +12,7 @@ import { vmixService } from './services/vmixService';
 import { blenderService } from './services/blenderService';
 import { videoService } from './services/videoService';
 import { spotifyService } from './services/spotifyService';
+import { twitchService } from './services/twitchService';
 
 interface GroundingChunk {
   web?: {
@@ -338,6 +339,17 @@ const App: React.FC = () => {
     throw new Error("Invalid Spotify command. Supported: play <track name>");
   };
 
+  const handleTwitchCommand = async (args: string[]): Promise<string> => {
+    const [subCommand] = args;
+    switch (subCommand?.toLowerCase()) {
+      case 'start_stream':
+        return await twitchService.startStream();
+      case 'stop_stream':
+        return await twitchService.stopStream();
+    }
+    throw new Error("Invalid Twitch command. Supported: start_stream, stop_stream");
+  };
+
   const handleSendMessage = async (messageToSend?: string) => {
     const messageContent = messageToSend || input;
     if (!messageContent.trim()) return;
@@ -372,7 +384,7 @@ const App: React.FC = () => {
     
     switch (cmd) {
       case '/help':
-        addMessage({ role: 'fux', content: 'Available Commands:\n/help - Show this message\n/agent <goal> - Engage agent mode for a complex task\n/ingest <source> - Ingest a new Power Module\n/powers - List ingested Power Modules\n/use <module> [args] - Use a Power Module (e.g. vmix, blender, video, spotify)\n  - vmix switch input <id>\n  - vmix transition input <id> <type> <duration_ms>\n  - vmix script <python_script>\n  - vmix audio volume input <id> <0-100>\n  - vmix audio mute input <id>\n  - vmix audio unmute input <id>\n  - vmix audio master <0-100>\n  - blender <python_script>\n  - video autocut <source_path> with instructions <text>\n  - spotify play <song_name>\n/generate image <prompt> - Create an image from a text description\n/search <query> - Get a web-grounded answer to a query' });
+        addMessage({ role: 'fux', content: 'Available Commands:\n/help - Show this message\n/agent <goal> - Engage agent mode for a complex task\n/ingest <source> - Ingest a new Power Module\n/powers - List ingested Power Modules\n/use <module> [args] - Use a Power Module (e.g. vmix, blender, video, spotify, twitch)\n  - vmix switch input <id>\n  - vmix transition input <id> <type> <duration_ms>\n  - vmix script <python_script>\n  - vmix audio volume input <id> <0-100>\n  - vmix audio mute input <id>\n  - vmix audio unmute input <id>\n  - vmix audio master <0-100>\n  - blender <python_script>\n  - video autocut <source_path> with instructions <text>\n  - spotify play <song_name>\n  - twitch start_stream | stop_stream\n/generate image <prompt> - Create an image from a text description\n/search <query> - Get a web-grounded answer to a query' });
         break;
       case '/ingest':
         // Mock ingestion
@@ -447,6 +459,17 @@ const App: React.FC = () => {
                 addMessage({ role: 'system_core', content: `Spotify command failed: ${e.message}` });
             }
             break;
+        }
+
+        if (powerName.toLowerCase() === 'twitch') {
+          setCurrentTask(`Executing Twitch command...`);
+          try {
+              const resultMessage = await handleTwitchCommand(powerArgs);
+              addMessage({ role: 'system_core', content: resultMessage });
+          } catch (e: any) {
+              addMessage({ role: 'system_core', content: `Twitch command failed: ${e.message}` });
+          }
+          break;
         }
 
 
@@ -558,6 +581,11 @@ const App: React.FC = () => {
                 const spotifyResult = await handleSpotifyCommand(resolvedArgs.split(/\s+/));
                 currentStepOutput = spotifyResult;
                 addMessage({ role: 'system_core', content: spotifyResult });
+                break;
+              case 'twitch':
+                const twitchResult = await handleTwitchCommand(resolvedArgs.split(/\s+/));
+                currentStepOutput = twitchResult;
+                addMessage({ role: 'system_core', content: twitchResult });
                 break;
               case 'generateImage':
                 const base64Image = await generateImage(resolvedArgs);
