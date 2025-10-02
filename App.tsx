@@ -10,6 +10,7 @@ import { GoogleGenAI, LiveServerMessage, Modality, Blob } from '@google/genai';
 import { encode, decode, decodeAudioData } from './utils/audioUtils';
 import { vmixService } from './services/vmixService';
 import { blenderService } from './services/blenderService';
+import { videoService } from './services/videoService';
 
 interface GroundingChunk {
   web?: {
@@ -223,6 +224,102 @@ const App: React.FC = () => {
       startVoiceSession();
     }
   };
+  
+  const handleVMixCommand = async (args: string[]): Promise<string> => {
+    const [subCommand, ...rest] = args;
+    
+    switch (subCommand?.toLowerCase()) {
+        case 'switch': {
+            const [keyword, inputId] = rest;
+            if (keyword?.toLowerCase() === 'input' && inputId) {
+                await vmixService.sendCommand('Cut', { Input: inputId });
+                return `vMix command successful: Switched to input ${inputId}`;
+            }
+            break;
+        }
+        case 'transition': {
+            const [keyword, inputId, transitionType, duration] = rest;
+             if (keyword?.toLowerCase() === 'input' && inputId && transitionType && duration) {
+                if (isNaN(parseInt(duration))) throw new Error('Invalid duration. Must be a number in milliseconds.');
+                await vmixService.sendCommand(transitionType, { Input: inputId, Duration: duration });
+                return `vMix command successful: Transitioned to input ${inputId}`;
+            }
+            break;
+        }
+        case 'script': {
+            const script = rest.join(' ');
+            if (script) {
+                await vmixService.runScript(script);
+                return `vMix script sent for execution.`;
+            }
+            break;
+        }
+        case 'audio': {
+            const [audioCmd, ...audioArgs] = rest;
+            switch (audioCmd?.toLowerCase()) {
+                case 'volume': {
+                    const [keyword, inputId, levelStr] = audioArgs;
+                    if (keyword?.toLowerCase() === 'input' && inputId && levelStr) {
+                        const level = parseInt(levelStr, 10);
+                        if (isNaN(level) || level < 0 || level > 100) throw new Error('Volume level must be a number between 0 and 100.');
+                        await vmixService.sendCommand('SetVolume', { Input: inputId, Value: level.toString() });
+                        return `vMix command successful: Set volume for input ${inputId} to ${level}.`;
+                    }
+                    break;
+                }
+                case 'mute': {
+                    const [keyword, inputId] = audioArgs;
+                    if (keyword?.toLowerCase() === 'input' && inputId) {
+                        await vmixService.sendCommand('AudioOff', { Input: inputId });
+                        return `vMix command successful: Muted input ${inputId}.`;
+                    }
+                    break;
+                }
+                case 'unmute': {
+                    const [keyword, inputId] = audioArgs;
+                    if (keyword?.toLowerCase() === 'input' && inputId) {
+                        await vmixService.sendCommand('AudioOn', { Input: inputId });
+                        return `vMix command successful: Unmuted input ${inputId}.`;
+                    }
+                    break;
+                }
+                case 'master': {
+                    const [levelStr] = audioArgs;
+                    if (levelStr) {
+                        const level = parseInt(levelStr, 10);
+                        if (isNaN(level) || level < 0 || level > 100) throw new Error('Master volume level must be a number between 0 and 100.');
+                        await vmixService.sendCommand('SetMasterVolume', { Value: level.toString() });
+                        return `vMix command successful: Set master volume to ${level}.`;
+                    }
+                    break;
+                }
+            }
+            break;
+        }
+    }
+    
+    throw new Error("Invalid vMix command or arguments.");
+  };
+
+  const handleVideoCommand = async (args: string[]): Promise<string> => {
+    const [subCommand, ...rest] = args;
+    
+    switch (subCommand?.toLowerCase()) {
+        case 'autocut': {
+            const commandString = rest.join(' ');
+            const parts = commandString.split(' with instructions ');
+            if (parts.length === 2) {
+                const sourceFile = parts[0].trim();
+                const instructions = parts[1].trim();
+                const result = await videoService.autoCutVideo(sourceFile, instructions);
+                 return `Video command successful: ${result.message} Output at: ${result.outputPath}`;
+            }
+            break;
+        }
+    }
+    
+    throw new Error("Invalid video command or arguments. Use: autocut <source> with instructions <prompt>");
+  };
 
   const handleSendMessage = async (messageToSend?: string) => {
     const messageContent = messageToSend || input;
@@ -258,7 +355,7 @@ const App: React.FC = () => {
     
     switch (cmd) {
       case '/help':
-        addMessage({ role: 'fux', content: 'Available Commands:\n/help - Show this message\n/agent <goal> - Engage agent mode for a complex task\n/ingest <source> - Ingest a new Power Module\n/powers - List ingested Power Modules\n/use <module> [args] - Use a Power Module (e.g. vmix, blender)\n  - vmix switch input <id>\n  - vmix transition input <id> <type> <duration_ms>\n  - vmix script <python_script>\n/generate image <prompt> - Create an image from a text description\n/search <query> - Get a web-grounded answer to a query' });
+        addMessage({ role: 'fux', content: 'Available Commands:\n/help - Show this message\n/agent <goal> - Engage agent mode for a complex task\n/ingest <source> - Ingest a new Power Module\n/powers - List ingested Power Modules\n/use <module> [args] - Use a Power Module (e.g. vmix, blender, video)\n  - vmix switch input <id>\n  - vmix transition input <id> <type> <duration_ms>\n  - vmix script <python_script>\n  - vmix audio volume input <id> <0-100>\n  - vmix audio mute input <id>\n  - vmix audio unmute input <id>\n  - vmix audio master <0-100>\n  - blender <python_script>\n  - video autocut <source_path> with instructions <text>\n/generate image <prompt> - Create an image from a text description\n/search <query> - Get a web-grounded answer to a query' });
         break;
       case '/ingest':
         // Mock ingestion
@@ -284,44 +381,12 @@ const App: React.FC = () => {
         }
         
         if (powerName.toLowerCase() === 'vmix') {
-          const [subCommand, keyword, ...rest] = powerArgs;
-          if (subCommand?.toLowerCase() === 'switch' && keyword?.toLowerCase() === 'input' && rest.length === 1) {
-            const inputId = rest[0];
-            setCurrentTask(`Executing vMix command: Switch to input ${inputId}`);
-            try {
-              await vmixService.sendCommand('Cut', { Input: inputId });
-              addMessage({ role: 'system_core', content: `vMix command successful: Switched to input ${inputId}` });
-            } catch (e: any) {
+          setCurrentTask(`Executing vMix command...`);
+          try {
+              const resultMessage = await handleVMixCommand(powerArgs);
+              addMessage({ role: 'system_core', content: resultMessage });
+          } catch (e: any) {
               addMessage({ role: 'system_core', content: `vMix command failed: ${e.message}` });
-            }
-          } else if (subCommand?.toLowerCase() === 'transition' && keyword?.toLowerCase() === 'input' && rest.length === 3) {
-            const [inputId, transitionType, duration] = rest;
-            if (isNaN(parseInt(duration))) {
-              addMessage({ role: 'fux', content: 'Invalid duration. Must be a number in milliseconds.' });
-              break;
-            }
-            setCurrentTask(`Executing vMix transition: ${transitionType} to input ${inputId} over ${duration}ms`);
-            try {
-              await vmixService.sendCommand(transitionType, { Input: inputId, Duration: duration });
-              addMessage({ role: 'system_core', content: `vMix command successful: Transitioned to input ${inputId}` });
-            } catch (e: any) {
-              addMessage({ role: 'system_core', content: `vMix command failed: ${e.message}` });
-            }
-          } else if (subCommand?.toLowerCase() === 'script') {
-            const script = [keyword, ...rest].join(' ');
-            if (!script) {
-                addMessage({ role: 'fux', content: 'Please provide a script to execute. Usage: /use vmix script <your_script>' });
-                break;
-            }
-            setCurrentTask(`Executing vMix script...`);
-            try {
-                await vmixService.runScript(script);
-                addMessage({ role: 'system_core', content: `vMix script sent for execution.` });
-            } catch (e: any) {
-                addMessage({ role: 'system_core', content: `vMix script execution failed: ${e.message}` });
-            }
-          } else {
-            addMessage({ role: 'fux', content: "Invalid vMix command. Supported formats: 'switch input <id>', 'transition input <id> <type> <duration_ms>', or 'script <python_script>'" });
           }
           break;
         }
@@ -343,6 +408,17 @@ const App: React.FC = () => {
             addMessage({ role: 'system_core', content: `Blender script execution failed: ${e.message}` });
           }
           break;
+        }
+
+        if (powerName.toLowerCase() === 'video') {
+            setCurrentTask(`Executing video command...`);
+            try {
+                const resultMessage = await handleVideoCommand(powerArgs);
+                addMessage({ role: 'system_core', content: resultMessage });
+            } catch (e: any) {
+                addMessage({ role: 'system_core', content: `Video command failed: ${e.message}` });
+            }
+            break;
         }
 
         setCurrentTask(`Executing Power Module: ${powerName}`);
@@ -432,30 +508,22 @@ const App: React.FC = () => {
             switch (step.tool) {
               case 'vmix':
                 const vmixCommandParts = resolvedArgs.split(/\s+/);
-                const vmixSubCommand = vmixCommandParts[0];
-
-                if (vmixSubCommand === 'switch' && vmixCommandParts[1] === 'input' && vmixCommandParts.length === 3) {
-                    const inputId = vmixCommandParts[2];
-                    await vmixService.sendCommand('Cut', { Input: inputId });
-                    addMessage({ role: 'system_core', content: `vMix command successful: Switched to input ${inputId}` });
-                } else if (vmixSubCommand === 'transition' && vmixCommandParts[1] === 'input' && vmixCommandParts.length === 5) {
-                    const inputId = vmixCommandParts[2];
-                    const transitionType = vmixCommandParts[3];
-                    const duration = vmixCommandParts[4];
-                    await vmixService.sendCommand(transitionType, { Input: inputId, Duration: duration });
-                    addMessage({ role: 'system_core', content: `vMix command successful: Transitioned to input ${inputId} via ${transitionType}` });
-                } else if (vmixSubCommand === 'script') {
-                    const script = vmixCommandParts.slice(1).join(' ');
-                    await vmixService.runScript(script);
-                    addMessage({ role: 'system_core', content: `vMix script executed successfully via agent.` });
-                } else {
-                    throw new Error(`Unsupported vMix agent command format: ${resolvedArgs}`);
+                try {
+                    const resultMessage = await handleVMixCommand(vmixCommandParts);
+                    addMessage({ role: 'system_core', content: resultMessage });
+                } catch (e: any) {
+                    throw new Error(`Agent vMix command failed: ${e.message}`);
                 }
                 break;
               case 'blender':
                 const result = await blenderService.runScript(resolvedArgs);
                 currentStepOutput = JSON.stringify(result);
                 addMessage({ role: 'system_core', content: `Blender script result:\n${currentStepOutput}` });
+                break;
+              case 'video':
+                const videoResult = await handleVideoCommand(resolvedArgs.split(/\s+/));
+                currentStepOutput = videoResult;
+                addMessage({ role: 'system_core', content: videoResult });
                 break;
               case 'generateImage':
                 const base64Image = await generateImage(resolvedArgs);

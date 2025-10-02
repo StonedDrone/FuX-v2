@@ -5,6 +5,7 @@ import { authService } from '../services/authService';
 import { graphService } from '../services/microsoftGraphService';
 import { vmixService } from '../services/vmixService';
 import { blenderService } from '../services/blenderService';
+import { videoService } from '../services/videoService';
 import { GithubIcon } from './icons/GithubIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
 import { FacebookIcon } from './icons/FacebookIcon';
@@ -16,6 +17,7 @@ import { EyeOffIcon } from './icons/EyeOffIcon';
 import { YouTubeIcon } from './icons/YouTubeIcon';
 import { VMixIcon } from './icons/VMixIcon';
 import { BlenderIcon } from './icons/BlenderIcon';
+import { VideoIcon } from './icons/VideoIcon';
 
 
 interface ConnectionsPanelProps {
@@ -53,6 +55,13 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
   const [isBlenderConnecting, setIsBlenderConnecting] = useState(false);
   const [blenderError, setBlenderError] = useState<string | null>(null);
 
+  // Video Service State
+  const [videoHost, setVideoHost] = useState('127.0.0.1');
+  const [videoPort, setVideoPort] = useState('8090');
+  const [isVideoConnected, setIsVideoConnected] = useState(false);
+  const [isVideoConnecting, setIsVideoConnecting] = useState(false);
+  const [videoError, setVideoError] = useState<string | null>(null);
+
 
   // Load saved API keys and settings from localStorage on component mount
   useEffect(() => {
@@ -70,6 +79,11 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
     if (savedBlenderHost) setBlenderHost(savedBlenderHost);
     const savedBlenderPort = localStorage.getItem('blender_port');
     if (savedBlenderPort) setBlenderPort(savedBlenderPort);
+    
+    const savedVideoHost = localStorage.getItem('video_host');
+    if (savedVideoHost) setVideoHost(savedVideoHost);
+    const savedVideoPort = localStorage.getItem('video_port');
+    if (savedVideoPort) setVideoPort(savedVideoPort);
   }, []);
 
   useEffect(() => {
@@ -174,6 +188,32 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
   const handleDisconnectBlender = () => {
     setIsBlenderConnected(false);
     blenderService.disconnect();
+  };
+
+  const handleConnectVideo = async () => {
+    setIsVideoConnecting(true);
+    setVideoError(null);
+    try {
+      const success = await videoService.checkConnection(videoHost, videoPort);
+      if (success) {
+        setIsVideoConnected(true);
+        localStorage.setItem('video_host', videoHost);
+        localStorage.setItem('video_port', videoPort);
+        videoService.setConnection(videoHost, videoPort);
+      } else {
+        throw new Error('Video service did not respond.');
+      }
+    } catch (err) {
+      setVideoError('Connection failed. Check host/port and ensure the video service is running.');
+      setIsVideoConnected(false);
+    } finally {
+      setIsVideoConnecting(false);
+    }
+  };
+
+  const handleDisconnectVideo = () => {
+    setIsVideoConnected(false);
+    videoService.disconnect();
   };
 
 
@@ -332,6 +372,57 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
                                 className="w-full py-2 px-4 text-sm font-semibold rounded-md bg-cyan-600/50 text-cyan-200 hover:bg-cyan-600/80 disabled:bg-slate-700 disabled:cursor-wait transition-colors"
                             >
                                 {isBlenderConnecting ? 'Connecting...' : 'Connect'}
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {/* Video Service Card */}
+                <div>
+                    <div className="flex justify-between items-center">
+                        <div className="flex items-center space-x-3">
+                            <VideoIcon className="w-5 h-5 text-slate-300"/>
+                            <p className="font-bold text-slate-100">OpenCut Video Service</p>
+                        </div>
+                        <div className={`w-3 h-3 rounded-full ${isVideoConnected ? 'bg-green-500' : 'bg-slate-500'}`}></div>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1 mb-4">Connect to a video editing backend.</p>
+                    {videoError && <p className="text-xs text-red-400 mb-3">{videoError}</p>}
+                    
+                    {isVideoConnected ? (
+                        <div>
+                            <p className="text-sm text-slate-300">Connected to <span className="font-semibold text-cyan-400">{videoHost}:{videoPort}</span></p>
+                            <button 
+                                onClick={handleDisconnectVideo}
+                                className="w-full mt-4 py-2 px-4 text-sm font-semibold rounded-md bg-rose-600/50 text-rose-200 hover:bg-rose-600/80 transition-colors"
+                            >
+                                Disconnect
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            <div className="flex space-x-2">
+                                <input
+                                    type="text"
+                                    value={videoHost}
+                                    onChange={(e) => setVideoHost(e.target.value)}
+                                    placeholder="Host (e.g., 127.0.0.1)"
+                                    className="w-2/3 bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                />
+                                <input
+                                    type="text"
+                                    value={videoPort}
+                                    onChange={(e) => setVideoPort(e.target.value)}
+                                    placeholder="Port"
+                                    className="w-1/3 bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                />
+                            </div>
+                            <button 
+                                onClick={handleConnectVideo}
+                                disabled={isVideoConnecting}
+                                className="w-full py-2 px-4 text-sm font-semibold rounded-md bg-cyan-600/50 text-cyan-200 hover:bg-cyan-600/80 disabled:bg-slate-700 disabled:cursor-wait transition-colors"
+                            >
+                                {isVideoConnecting ? 'Connecting...' : 'Connect'}
                             </button>
                         </div>
                     )}
