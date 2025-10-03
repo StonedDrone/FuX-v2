@@ -1,3 +1,5 @@
+
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ChatInterface } from './components/ChatInterface';
 import { Header } from './components/Header';
@@ -116,7 +118,8 @@ const App: React.FC = () => {
       const savedActiveId = localStorage.getItem('fux_active_session_id');
 
       if (savedSessions) {
-        const parsedSessions = JSON.parse(savedSessions);
+        // FIX: Explicitly type parsed JSON to maintain type safety for `sessions` state.
+        const parsedSessions: ChatSession[] = JSON.parse(savedSessions);
         if (parsedSessions.length > 0) {
           setSessions(parsedSessions);
           if (savedActiveId && parsedSessions.some((s: ChatSession) => s.id === savedActiveId)) {
@@ -139,7 +142,9 @@ const App: React.FC = () => {
     try {
         const savedPlugins = localStorage.getItem('fux_plugins');
         if (savedPlugins) {
-            setPlugins(JSON.parse(savedPlugins));
+            // FIX: Explicitly type parsed JSON. The lack of type information caused `plugins` to be `any[]`, which was the root cause of the type error on line 303.
+            const parsedPlugins: Plugin[] = JSON.parse(savedPlugins);
+            setPlugins(parsedPlugins);
         }
     } catch (e) {
         console.error("Failed to load plugins from localStorage", e);
@@ -149,7 +154,11 @@ const App: React.FC = () => {
     try {
       const storedFavorites = localStorage.getItem('fux_favorite_powers');
       if (storedFavorites) {
-        setFavoritePowers(new Set(JSON.parse(storedFavorites)));
+        // FIX: Replaced type assertion with a type guard for robust parsing.
+        const parsedFavorites = JSON.parse(storedFavorites);
+        if (Array.isArray(parsedFavorites) && parsedFavorites.every(item => typeof item === 'string')) {
+          setFavoritePowers(new Set(parsedFavorites));
+        }
       }
     } catch (e) {
       console.error("Failed to load favorite powers from localStorage", e);
@@ -159,7 +168,9 @@ const App: React.FC = () => {
     try {
       const savedCodex = localStorage.getItem('fux_codex_files');
       if (savedCodex) {
-        setCodexFiles(JSON.parse(savedCodex));
+        // FIX: Explicitly type parsed JSON to ensure type safety for `codexFiles` state.
+        const parsedCodex: CodexFile[] = JSON.parse(savedCodex);
+        setCodexFiles(parsedCodex);
       }
     } catch (e) {
       console.error("Failed to load codex from localStorage", e);
@@ -194,7 +205,7 @@ const App: React.FC = () => {
     try {
       localStorage.setItem('fux_favorite_powers', JSON.stringify(Array.from(favoritePowers)));
     } catch (e) {
-      console.error("Failed to save favorite powers to localStorage", e);
+      console.error("Failed to save favorite powers from localStorage", e);
     }
   }, [favoritePowers]);
 
@@ -210,7 +221,7 @@ const App: React.FC = () => {
   const activeSession = sessions.find(s => s.id === activeSessionId);
   const messages = activeSession ? activeSession.messages : [];
 
-  const addMessage = (message: Message) => {
+  const addMessage = useCallback((message: Message) => {
     if (!activeSessionId) return;
     setSessions(prev => 
       prev.map(session => 
@@ -219,7 +230,7 @@ const App: React.FC = () => {
           : session
       )
     );
-  };
+  }, [activeSessionId]);
   
   const handleCreateNewSession = () => {
     createNewSession();
@@ -280,41 +291,48 @@ const App: React.FC = () => {
     }
   };
 
-  const handleIngestUrls = async (urls: string[]) => {
+  const handleIngestUrls = useCallback(async (urls: string[]) => {
     setIsIngestPanelOpen(false);
     setIsReplying(true);
     addMessage({ role: 'system_core', content: `[BATCH INGESTION PROTOCOL] Initiated for ${urls.length} repositories.` });
-
+  
+    const currentPluginNames = new Set(plugins.map(p => p.power_name));
+    const successfullyIngestedPlugins: Plugin[] = [];
+  
     for (const [index, url] of urls.entries()) {
       const shortUrl = url.split('/').slice(-2).join('/');
       try {
         setCurrentTask(`[${index + 1}/${urls.length}] Fetching: ${shortUrl}`);
         addMessage({ role: 'system_core', content: `[INGESTION] Fetching content from ${url}...` });
-
+  
         const { repoName, content } = await githubService.fetchRepoContents(url);
-
+  
         setCurrentTask(`[${index + 1}/${urls.length}] Ingesting: ${repoName}`);
         addMessage({ role: 'system_core', content: `[INGESTION] Analyzing ${repoName}...` });
-
-        // Get current list of names before this ingestion
-        const existingNames = plugins.map(p => p.power_name);
-        const newPlugin = await ingestRepository(repoName, content, existingNames, getCombinedCodexContent());
+  
+        const existingNamesForThisCall = Array.from(currentPluginNames);
+        const newPlugin = await ingestRepository(repoName, content, existingNamesForThisCall, getCombinedCodexContent());
         
-        // Use a function for setPlugins to get the most recent state
-        setPlugins(prev => [...prev, newPlugin]);
+        successfullyIngestedPlugins.push(newPlugin);
+        currentPluginNames.add(newPlugin.power_name); // Update local set for next iteration
+  
         addMessage({ role: 'system_core', content: `Successfully ingested and activated Power Module: ${newPlugin.power_name} [${newPlugin.category}].\n${newPlugin.tools.length} new tools available.`});
-
+  
       } catch (e: any) {
         const errorMessage = e instanceof Error ? e.message : String(e);
         setError(`Failed to ingest repository from ${url}: ${errorMessage}`);
         addMessage({ role: 'system_core', content: `[INGESTION FAILED for ${shortUrl}] ${errorMessage}` });
       }
     }
-
+  
+    if (successfullyIngestedPlugins.length > 0) {
+      setPlugins(prev => [...prev, ...successfullyIngestedPlugins]);
+    }
+  
     addMessage({ role: 'system_core', content: `[BATCH INGESTION PROTOCOL] Completed.` });
     setIsReplying(false);
     setCurrentTask(null);
-  };
+  }, [addMessage, getCombinedCodexContent, plugins]);
 
 
   const handleAddCodexFile = async (file: File) => {
@@ -453,7 +471,7 @@ const App: React.FC = () => {
       setError('Could not access microphone. Please check permissions.');
       setIsSessionInitializing(false);
     }
-  }, [isListening, isSessionInitializing]);
+  }, [isListening, isSessionInitializing, addMessage]);
 
   const stopVoiceSession = useCallback((closeSession = true) => {
     if (closeSession && sessionPromiseRef.current) {
@@ -938,6 +956,30 @@ const App: React.FC = () => {
       return newFavorites;
     });
   };
+
+  // Effect for one-time initial ingestion of the chaos engine
+  useEffect(() => {
+    const performInitialIngest = async () => {
+      const initialIngestFlag = 'fux_initial_ingest_complete_v2';
+      const hasIngested = localStorage.getItem(initialIngestFlag);
+      
+      if (activeSessionId && !hasIngested && plugins.length === 0) {
+        localStorage.setItem(initialIngestFlag, 'true');
+        addMessage({
+          role: 'system_core',
+          content: "[FIRST BOOT SEQUENCE] No Power Modules detected. Ingesting foundational Chaos Engine from StonedDrone/fux-chaos-engine..."
+        });
+        await handleIngestUrls(['https://github.com/StonedDrone/fux-chaos-engine']);
+      }
+    };
+  
+    // We only want this to run after the initial state from localStorage has been loaded.
+    // The activeSessionId is a good signal for this.
+    if (sessions.length > 0 && activeSessionId) {
+       performInitialIngest();
+    }
+  }, [activeSessionId, sessions, plugins, addMessage, handleIngestUrls]);
+
 
   return (
     <div className="bg-slate-950 text-slate-300 font-sans h-screen overflow-hidden flex flex-col items-center">
