@@ -3,14 +3,15 @@ import { CloseIcon } from './icons/CloseIcon';
 import { DeployIcon } from './icons/DeployIcon';
 import { StarIcon } from './icons/StarIcon';
 import type { Plugin } from '../App';
+import { ToolDefinition } from '../services/geminiService';
 
 interface PowersGuideProps {
   isOpen: boolean;
   plugins: Plugin[];
   onClose: () => void;
-  onDeployPower: (powerName: string) => void;
+  onDeployPower: (toolName: string) => void;
   favoritePowers: Set<string>;
-  onToggleFavorite: (powerName: string) => void;
+  onToggleFavorite: (powerName:string) => void;
 }
 
 const categoryColorMap: { [key: string]: { border: string, bg: string, text: string } } = {
@@ -24,6 +25,9 @@ const categoryColorMap: { [key: string]: { border: string, bg: string, text: str
   'Web Intelligence': { border: 'border-sky-400', bg: 'bg-sky-900/50', text: 'text-sky-300' },
   'Core Function': { border: 'border-cyan-400', bg: 'bg-cyan-900/50', text: 'text-cyan-300' },
   'Utility': { border: 'border-green-400', bg: 'bg-green-900/50', text: 'text-green-300' },
+  'Data Processing': { border: 'border-teal-400', bg: 'bg-teal-900/50', text: 'text-teal-300' },
+  'File I/O': { border: 'border-lime-400', bg: 'bg-lime-900/50', text: 'text-lime-300' },
+  'API Integration': { border: 'border-fuchsia-400', bg: 'bg-fuchsia-900/50', text: 'text-fuchsia-300' },
   'General': { border: 'border-slate-500', bg: 'bg-slate-700/50', text: 'text-slate-300' },
 };
 const defaultColor = { border: 'border-slate-700', bg: 'bg-slate-700/50', text: 'text-slate-400' };
@@ -34,39 +38,29 @@ const ChevronDownIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
   </svg>
 );
 
-interface PowerItemProps {
-  plugin: Plugin;
-  isFavorite: boolean;
-  onDeployPower: (powerName: string) => void;
-  onToggleFavorite: (powerName: string) => void;
+
+interface ToolItemProps {
+    tool: ToolDefinition;
+    onDeploy: (toolName: string) => void;
 }
 
-const PowerItem: React.FC<PowerItemProps> = ({ plugin, isFavorite, onDeployPower, onToggleFavorite }) => (
-  <li className="p-2 bg-slate-900/70 rounded-md">
-    <div className="flex justify-between items-start">
-      <div className="flex items-start space-x-2">
-         <button
-          onClick={() => onToggleFavorite(plugin.power_name)}
-          className="p-1 text-slate-500 hover:text-yellow-400 transition-colors flex-shrink-0"
-          title={isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}
-        >
-          <StarIcon className="w-4 h-4" filled={isFavorite} />
-        </button>
-        <div>
-          <p className="font-bold text-slate-200 font-mono text-sm">{plugin.power_name}</p>
-          <p className="text-xs text-slate-400 mt-1">{plugin.description}</p>
+const ToolItem: React.FC<ToolItemProps> = ({ tool, onDeploy }) => (
+    <div className="p-2 bg-slate-900/70 rounded-md">
+        <div className="flex justify-between items-start">
+            <div>
+                <p className="font-bold text-slate-200 font-mono text-sm">{tool.name}</p>
+                <p className="text-xs text-slate-400 mt-1">{tool.description}</p>
+            </div>
+            <button
+                onClick={() => onDeploy(tool.name)}
+                className="ml-2 flex-shrink-0 flex items-center space-x-1.5 px-2 py-1 text-xs rounded-md bg-cyan-600/50 text-cyan-200 hover:bg-cyan-600/80 transition-colors"
+                title={`Deploy ${tool.name}`}
+            >
+                <DeployIcon className="w-3 h-3" />
+                <span>Deploy</span>
+            </button>
         </div>
-      </div>
-      <button
-        onClick={() => onDeployPower(plugin.power_name)}
-        className="ml-2 flex-shrink-0 flex items-center space-x-1.5 px-2 py-1 text-xs rounded-md bg-cyan-600/50 text-cyan-200 hover:bg-cyan-600/80 transition-colors"
-        title={`Deploy ${plugin.power_name}`}
-      >
-        <DeployIcon className="w-3 h-3" />
-        <span>Deploy</span>
-      </button>
     </div>
-  </li>
 );
 
 
@@ -88,10 +82,7 @@ export const PowersGuide: React.FC<PowersGuideProps> = ({ isOpen, plugins, onClo
       categorized[category].push(plugin);
     }
     
-    // Sort favorites alphabetically
     favorites.sort((a, b) => a.power_name.localeCompare(b.power_name));
-    
-    // Sort categorized plugins alphabetically within each category
     for (const category in categorized) {
         categorized[category].sort((a, b) => a.power_name.localeCompare(b.power_name));
     }
@@ -111,37 +102,53 @@ export const PowersGuide: React.FC<PowersGuideProps> = ({ isOpen, plugins, onClo
     });
   };
 
-  const renderCategory = (category: string, powers: Plugin[], isFavoritesSection = false) => {
-    const colors = categoryColorMap[category] || defaultColor;
-    const isExpanded = expandedCategories.has(category);
-    if (!powers || powers.length === 0) return null;
+  const renderCategorySection = (title: string, powerPlugins: Plugin[], isFavoritesSection = false) => {
+    const colors = categoryColorMap[title] || defaultColor;
+    const isExpanded = expandedCategories.has(title);
+    if (!powerPlugins || powerPlugins.length === 0) return null;
 
     return (
-      <div key={category} className={`rounded-lg ${colors.bg} border ${colors.border.replace('-l-4', '')}`}>
+      <div key={title} className={`rounded-lg ${colors.bg} border ${colors.border.replace('-l-4', '')}`}>
         <button
-          onClick={() => toggleCategory(category)}
+          onClick={() => toggleCategory(title)}
           className="w-full flex justify-between items-center p-3 text-left focus:outline-none"
           aria-expanded={isExpanded}
         >
           <div className="flex items-center space-x-2">
             {isFavoritesSection && <StarIcon className={`w-5 h-5 ${colors.text}`} filled />}
-            <h3 className={`font-bold ${colors.text}`}>{category}</h3>
+            <h3 className={`font-bold ${colors.text}`}>{title}</h3>
           </div>
           <ChevronDownIcon className={`w-5 h-5 text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
         </button>
-        <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-[500px]' : 'max-h-0'}`}>
-          <ul className="p-3 pt-0 space-y-2">
-            {/* FIX: Removed redundant cast as `powers` is already typed in the function signature. */}
-            {powers.map(plugin => (
-              <PowerItem
-                key={plugin.power_name}
-                plugin={plugin}
-                isFavorite={favoritePowers.has(plugin.power_name)}
-                onDeployPower={onDeployPower}
-                onToggleFavorite={onToggleFavorite}
-              />
+        <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-[1000px]' : 'max-h-0'}`}>
+          <div className="p-3 pt-0 space-y-3">
+            {powerPlugins.map(plugin => (
+              <div key={plugin.power_name} className="p-3 bg-slate-800/50 rounded-lg">
+                <div className="flex items-center space-x-2">
+                   <button
+                    onClick={() => onToggleFavorite(plugin.power_name)}
+                    className="p-1 text-slate-500 hover:text-yellow-400 transition-colors"
+                    title={favoritePowers.has(plugin.power_name) ? 'Remove from Favorites' : 'Add to Favorites'}
+                  >
+                    <StarIcon className="w-4 h-4" filled={favoritePowers.has(plugin.power_name)} />
+                  </button>
+                  <div>
+                    <h4 className="font-semibold text-slate-100">{plugin.power_name}</h4>
+                    <p className="text-xs text-slate-400">{plugin.description}</p>
+                  </div>
+                </div>
+                 {plugin.tools && plugin.tools.length > 0 && (
+                    <ul className="mt-2 pl-5 space-y-2 border-l border-slate-700 ml-2">
+                        {plugin.tools.map(tool => (
+                            <li key={tool.name}>
+                                <ToolItem tool={tool} onDeploy={onDeployPower} />
+                            </li>
+                        ))}
+                    </ul>
+                 )}
+              </div>
             ))}
-          </ul>
+          </div>
         </div>
       </div>
     );
@@ -168,14 +175,13 @@ export const PowersGuide: React.FC<PowersGuideProps> = ({ isOpen, plugins, onClo
         </div>
         <div className="p-4 overflow-y-auto h-[calc(100%-65px)]">
           {plugins.length === 0 ? (
-            <p className="text-slate-500 text-center mt-8">No Power Modules ingested. Use the <code className="bg-slate-800 px-1 rounded">/ingest</code> command.</p>
+            <p className="text-slate-500 text-center mt-8">No Power Modules ingested. Use the Ingest Matrix icon to add one.</p>
           ) : (
             <div className="space-y-3">
-              {renderCategory('Favorites', favoritePlugins, true)}
-              {/* FIX: Replaced Object.entries with Object.keys for better type inference from TypeScript. */}
+              {renderCategorySection('Favorites', favoritePlugins, true)}
               {Object.keys(categorizedPlugins)
                 .sort((catA, catB) => catA.localeCompare(catB))
-                .map((category) => renderCategory(category, categorizedPlugins[category]))}
+                .map((category) => renderCategorySection(category, categorizedPlugins[category]))}
             </div>
           )}
         </div>

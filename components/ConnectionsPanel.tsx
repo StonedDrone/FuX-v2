@@ -6,6 +6,7 @@ import { graphService } from '../services/microsoftGraphService';
 import { vmixService } from '../services/vmixService';
 import { blenderService } from '../services/blenderService';
 import { videoService } from '../services/videoService';
+import { codeExecutionService } from '../services/codeExecutionService';
 import { GithubIcon } from './icons/GithubIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
 import { FacebookIcon } from './icons/FacebookIcon';
@@ -21,6 +22,7 @@ import { VideoIcon } from './icons/VideoIcon';
 import { SpotifyIcon } from './icons/SpotifyIcon';
 import { spotifyService } from '../services/spotifyService';
 import { twitchService } from '../services/twitchService';
+import { TerminalIcon } from './icons/TerminalIcon';
 
 
 interface ConnectionsPanelProps {
@@ -64,6 +66,14 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
   const [isVideoConnected, setIsVideoConnected] = useState(false);
   const [isVideoConnecting, setIsVideoConnecting] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
+  
+  // Code Execution Service State
+  const [codeExecHost, setCodeExecHost] = useState('127.0.0.1');
+  const [codeExecPort, setCodeExecPort] = useState('8100');
+  const [isCodeExecConnected, setIsCodeExecConnected] = useState(false);
+  const [isCodeExecConnecting, setIsCodeExecConnecting] = useState(false);
+  const [codeExecError, setCodeExecError] = useState<string | null>(null);
+
 
   // Spotify State
   const [isSpotifyConnected, setIsSpotifyConnected] = useState(false);
@@ -97,6 +107,12 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
     if (savedVideoHost) setVideoHost(savedVideoHost);
     const savedVideoPort = localStorage.getItem('video_port');
     if (savedVideoPort) setVideoPort(savedVideoPort);
+
+    const savedCodeExecHost = localStorage.getItem('code_exec_host');
+    if (savedCodeExecHost) setCodeExecHost(savedCodeExecHost);
+    const savedCodeExecPort = localStorage.getItem('code_exec_port');
+    if (savedCodeExecPort) setCodeExecPort(savedCodeExecPort);
+
 
     const spotifyAccount = spotifyService.getAccount();
     if (spotifyAccount) {
@@ -244,6 +260,33 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
     setIsVideoConnected(false);
     videoService.disconnect();
   };
+  
+  const handleConnectCodeExec = async () => {
+    setIsCodeExecConnecting(true);
+    setCodeExecError(null);
+    try {
+      const success = await codeExecutionService.checkConnection(codeExecHost, codeExecPort);
+      if (success) {
+        setIsCodeExecConnected(true);
+        localStorage.setItem('code_exec_host', codeExecHost);
+        localStorage.setItem('code_exec_port', codeExecPort);
+        codeExecutionService.setConnection(codeExecHost, codeExecPort);
+      } else {
+        throw new Error('Execution engine did not respond.');
+      }
+    } catch (err) {
+      setCodeExecError('Connection failed. Check host/port and ensure the execution server is running.');
+      setIsCodeExecConnected(false);
+    } finally {
+      setIsCodeExecConnecting(false);
+    }
+  };
+
+  const handleDisconnectCodeExec = () => {
+    setIsCodeExecConnected(false);
+    codeExecutionService.disconnect();
+  };
+
 
   const handleConnectSpotify = async () => {
     setIsSpotifyConnecting(true);
@@ -414,6 +457,56 @@ export const ConnectionsPanel: React.FC<ConnectionsPanelProps> = ({ isOpen, onCl
           <div>
             <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">Local Software Integrations</h3>
             <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700 space-y-6">
+                 {/* Code Execution Engine Card */}
+                <div>
+                    <div className="flex justify-between items-center">
+                        <div className="flex items-center space-x-3">
+                            <TerminalIcon className="w-5 h-5 text-slate-300"/>
+                            <p className="font-bold text-slate-100">Code Execution Engine</p>
+                        </div>
+                        <div className={`w-3 h-3 rounded-full ${isCodeExecConnected ? 'bg-green-500' : 'bg-slate-500'}`}></div>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1 mb-4">Connect to a local server for real code execution.</p>
+                    {codeExecError && <p className="text-xs text-red-400 mb-3">{codeExecError}</p>}
+                    
+                    {isCodeExecConnected ? (
+                        <div>
+                            <p className="text-sm text-slate-300">Connected to <span className="font-semibold text-cyan-400">{codeExecHost}:{codeExecPort}</span></p>
+                            <button 
+                                onClick={handleDisconnectCodeExec}
+                                className="w-full mt-4 py-2 px-4 text-sm font-semibold rounded-md bg-rose-600/50 text-rose-200 hover:bg-rose-600/80 transition-colors"
+                            >
+                                Disconnect
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+                                <input
+                                    type="text"
+                                    value={codeExecHost}
+                                    onChange={(e) => setCodeExecHost(e.target.value)}
+                                    placeholder="Host (e.g., 127.0.0.1)"
+                                    className="w-full sm:w-2/3 bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                />
+                                <input
+                                    type="text"
+                                    value={codeExecPort}
+                                    onChange={(e) => setCodeExecPort(e.target.value)}
+                                    placeholder="Port"
+                                    className="w-full sm:w-1/3 bg-slate-900/50 border border-slate-600 rounded-md p-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                />
+                            </div>
+                            <button 
+                                onClick={handleConnectCodeExec}
+                                disabled={isCodeExecConnecting}
+                                className="w-full py-2 px-4 text-sm font-semibold rounded-md bg-cyan-600/50 text-cyan-200 hover:bg-cyan-600/80 disabled:bg-slate-700 disabled:cursor-wait transition-colors"
+                            >
+                                {isCodeExecConnecting ? 'Connecting...' : 'Connect'}
+                            </button>
+                        </div>
+                    )}
+                </div>
                 {/* vMix Card */}
                 <div>
                     <div className="flex justify-between items-center">

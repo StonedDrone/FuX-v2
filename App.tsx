@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ChatInterface } from './components/ChatInterface';
 import { Header } from './components/Header';
@@ -7,13 +6,16 @@ import { Hud } from './components/Hud';
 import { ConnectionsPanel } from './components/ConnectionsPanel';
 import { ErrorDisplay } from './components/ErrorDisplay';
 import { PowersGuide } from './components/PowersGuide';
-import { analyzeCode, executeCode, generateImage, googleSearch, createExecutionPlan, categorizePlugin, AgentStep } from './services/geminiService';
+import { ChatHistoryPanel } from './components/ChatHistoryPanel';
+import { IngestRepositoryPanel } from './components/IngestRepositoryPanel';
+import { analyzeCode, executeCode, generateImage, googleSearch, createExecutionPlan, ingestRepository, generateChatTitle, AgentStep, ToolDefinition } from './services/geminiService';
 import { GoogleGenAI, LiveServerMessage, Modality, Blob } from '@google/genai';
 import { vmixService } from './services/vmixService';
 import { blenderService } from './services/blenderService';
 import { videoService } from './services/videoService';
 import { spotifyService } from './services/spotifyService';
 import { twitchService } from './services/twitchService';
+import { CodexPanel, CodexFile } from './components/CodexPanel';
 
 interface GroundingChunk {
   web?: {
@@ -33,9 +35,17 @@ export interface Message {
   agentPlan?: AgentStep[];
 }
 
+export interface ChatSession {
+  id: string;
+  title: string;
+  messages: Message[];
+}
+
 export interface Plugin {
   power_name: string;
-  source: string;
+  source: string; // Filename or concept
+  code: string; // The actual source code
+  tools: ToolDefinition[];
   category: string;
   description: string;
 }
@@ -44,9 +54,9 @@ export interface Plugin {
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const App: React.FC = () => {
-  const [messages, setMessages] = useState<Message[]>([
-    { role: 'fux', content: 'FuX CORE ONLINE\nSTATUS: NOMINAL\nAwaiting directive. Use /help for a list of commands.' }
-  ]);
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  
   const [input, setInput] = useState('');
   const [isReplying, setIsReplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,11 +66,17 @@ const App: React.FC = () => {
   const [isPluginRegistryOpen, setIsPluginRegistryOpen] = useState(false);
   const [isConnectionsPanelOpen, setIsConnectionsPanelOpen] = useState(false);
   const [isPowersGuideOpen, setIsPowersGuideOpen] = useState(false);
+  const [isChatHistoryOpen, setIsChatHistoryOpen] = useState(false);
+  const [isIngestPanelOpen, setIsIngestPanelOpen] = useState(false);
+  const [isCodexPanelOpen, setIsCodexPanelOpen] = useState(false);
   const [isTtsEnabled, setIsTtsEnabled] = useState(false);
 
   // Plugin State
   const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [favoritePowers, setFavoritePowers] = useState<Set<string>>(new Set());
+
+  // Codex State
+  const [codexFiles, setCodexFiles] = useState<CodexFile[]>([]);
 
   // Voice State
   const [isListening, setIsListening] = useState(false);
@@ -78,7 +94,56 @@ const App: React.FC = () => {
   const nextStartTimeRef = useRef(0);
   const currentInputTranscriptionRef = useRef('');
 
+  const createNewSession = useCallback(() => {
+    const newSessionId = `session_${Date.now()}`;
+    const newSession: ChatSession = {
+      id: newSessionId,
+      title: 'New Session',
+      messages: [
+        { role: 'fux', content: 'FuX CORE ONLINE\nSTATUS: NOMINAL\nAwaiting directive. Use /help for a list of commands.' }
+      ],
+    };
+    setSessions(prev => [newSession, ...prev]);
+    setActiveSessionId(newSessionId);
+    return newSessionId;
+  }, []);
+
   useEffect(() => {
+    // Load sessions from localStorage on initial mount
+    try {
+      const savedSessions = localStorage.getItem('fux_chat_sessions');
+      const savedActiveId = localStorage.getItem('fux_active_session_id');
+
+      if (savedSessions) {
+        const parsedSessions = JSON.parse(savedSessions);
+        if (parsedSessions.length > 0) {
+          setSessions(parsedSessions);
+          if (savedActiveId && parsedSessions.some((s: ChatSession) => s.id === savedActiveId)) {
+            setActiveSessionId(savedActiveId);
+          } else {
+            setActiveSessionId(parsedSessions[0].id);
+          }
+        } else {
+          createNewSession();
+        }
+      } else {
+        createNewSession();
+      }
+    } catch (e) {
+      console.error("Failed to load sessions from localStorage", e);
+      createNewSession();
+    }
+    
+    // Load plugins from localStorage
+    try {
+        const savedPlugins = localStorage.getItem('fux_plugins');
+        if (savedPlugins) {
+            setPlugins(JSON.parse(savedPlugins));
+        }
+    } catch (e) {
+        console.error("Failed to load plugins from localStorage", e);
+    }
+
     // Load favorites from localStorage on initial mount
     try {
       const storedFavorites = localStorage.getItem('fux_favorite_powers');
@@ -88,7 +153,40 @@ const App: React.FC = () => {
     } catch (e) {
       console.error("Failed to load favorite powers from localStorage", e);
     }
-  }, []);
+
+    // Load codex from localStorage
+    try {
+      const savedCodex = localStorage.getItem('fux_codex_files');
+      if (savedCodex) {
+        setCodexFiles(JSON.parse(savedCodex));
+      }
+    } catch (e) {
+      console.error("Failed to load codex from localStorage", e);
+    }
+  }, [createNewSession]);
+
+  useEffect(() => {
+    // Save sessions to localStorage whenever they change
+    try {
+      if (sessions.length > 0) {
+        localStorage.setItem('fux_chat_sessions', JSON.stringify(sessions));
+      }
+      if (activeSessionId) {
+        localStorage.setItem('fux_active_session_id', activeSessionId);
+      }
+    } catch (e) {
+      console.error("Failed to save sessions to localStorage", e);
+    }
+  }, [sessions, activeSessionId]);
+
+  useEffect(() => {
+    // Save plugins to localStorage whenever they change
+    try {
+        localStorage.setItem('fux_plugins', JSON.stringify(plugins));
+    } catch (e) {
+        console.error("Failed to save plugins to localStorage", e);
+    }
+  }, [plugins]);
 
   useEffect(() => {
     // Save favorites to localStorage whenever they change
@@ -99,11 +197,106 @@ const App: React.FC = () => {
     }
   }, [favoritePowers]);
 
+  useEffect(() => {
+    // Save codex to localStorage
+    try {
+      localStorage.setItem('fux_codex_files', JSON.stringify(codexFiles));
+    } catch (e) {
+      console.error("Failed to save codex to localStorage", e);
+    }
+  }, [codexFiles]);
+  
+  const activeSession = sessions.find(s => s.id === activeSessionId);
+  const messages = activeSession ? activeSession.messages : [];
 
   const addMessage = (message: Message) => {
-    setMessages(prev => [...prev, message]);
+    if (!activeSessionId) return;
+    setSessions(prev => 
+      prev.map(session => 
+        session.id === activeSessionId 
+          ? { ...session, messages: [...session.messages, message] }
+          : session
+      )
+    );
   };
   
+  const handleCreateNewSession = () => {
+    createNewSession();
+    setIsChatHistoryOpen(false);
+  };
+  
+  const handleSwitchSession = (sessionId: string) => {
+    setActiveSessionId(sessionId);
+    setIsChatHistoryOpen(false);
+  };
+  
+  const handleDeleteSession = (sessionId: string) => {
+    setSessions(prev => {
+      const newSessions = prev.filter(s => s.id !== sessionId);
+      if (activeSessionId === sessionId) {
+        if (newSessions.length > 0) {
+          setActiveSessionId(newSessions[0].id);
+        } else {
+          const newId = createNewSession();
+          setActiveSessionId(newId);
+          return sessions.find(s => s.id === newId) ? [sessions.find(s => s.id === newId)!] : [];
+        }
+      }
+      if (newSessions.length === 0) {
+          createNewSession();
+      }
+      return newSessions;
+    });
+  };
+
+  const getCombinedCodexContent = useCallback((): string => {
+    if (codexFiles.length === 0) return '';
+    
+    return codexFiles
+      .map(file => `--- START OF ${file.name} ---\n${file.content}\n--- END OF ${file.name} ---`)
+      .join('\n\n');
+  }, [codexFiles]);
+  
+  const handleIngestFile = async (file: File) => {
+    setIsIngestPanelOpen(false);
+    setIsReplying(true);
+    setCurrentTask(`Ingesting repository: ${file.name}`);
+    addMessage({ role: 'system_core', content: `[INGESTION PROTOCOL] Analyzing ${file.name}...` });
+
+    try {
+      const fileContent = await file.text();
+      const existingNames = plugins.map(p => p.power_name);
+      const newPlugin = await ingestRepository(file.name, fileContent, existingNames, getCombinedCodexContent());
+      
+      setPlugins(prev => [...prev, newPlugin]);
+      addMessage({ role: 'system_core', content: `Successfully ingested and activated Power Module: ${newPlugin.power_name} [${newPlugin.category}].\n${newPlugin.tools.length} new tools available.`});
+    } catch (e: any) {
+      setError(`Failed to ingest repository: ${e.message}`);
+      addMessage({ role: 'system_core', content: `[INGESTION FAILED] ${e.message}` });
+    } finally {
+      setIsReplying(false);
+      setCurrentTask(null);
+    }
+  };
+
+  const handleAddCodexFile = async (file: File) => {
+    if (codexFiles.some(f => f.name === file.name)) {
+        setError(`A file named "${file.name}" already exists in the Codex.`);
+        return;
+    }
+    try {
+        const content = await file.text();
+        setCodexFiles(prev => [...prev, { name: file.name, content }]);
+    } catch(e: any) {
+        setError(`Failed to read file: ${e.message}`);
+    }
+  };
+
+  const handleDeleteCodexFile = (fileName: string) => {
+    setCodexFiles(prev => prev.filter(f => f.name !== fileName));
+  };
+
+
   const createBlob = (data: Float32Array): Blob => {
     const l = data.length;
     const int16 = new Int16Array(l);
@@ -388,12 +581,21 @@ const App: React.FC = () => {
     setIsReplying(true);
     setError(null);
 
+    const currentSession = sessions.find(s => s.id === activeSessionId);
+    if (currentSession && currentSession.messages.filter(m => m.role === 'user').length <= 1 && currentSession.title === 'New Session') {
+      generateChatTitle(messageContent, getCombinedCodexContent()).then(newTitle => {
+        setSessions(prev =>
+          prev.map(s => (s.id === activeSessionId ? { ...s, title: newTitle } : s))
+        );
+      });
+    }
+
     try {
       if (messageContent.startsWith('/')) {
         await handleCommand(messageContent);
       } else {
         setCurrentTask('Analyzing request...');
-        const response = await analyzeCode(messageContent, messages);
+        const response = await analyzeCode(messageContent, messages, getCombinedCodexContent());
         addMessage({ role: 'fux', content: response });
       }
     } catch (err: any) {
@@ -411,27 +613,11 @@ const App: React.FC = () => {
     
     switch (cmd) {
       case '/help':
-        addMessage({ role: 'fux', content: 'Available Commands:\n/help - Show this message\n/agent <goal> - Engage agent mode for a complex task\n/ingest <module_concept> - Ingest a new Power Module\n/powers - List ingested Power Modules\n/use <module> [args] - Use a Power Module (e.g. vmix, blender, video, spotify, twitch)\n  - vmix switch input <id>\n  - vmix transition input <id> <type> <duration_ms>\n  - vmix script <python_script>\n  - vmix audio volume input <id> <0-100>\n  - vmix audio mute input <id>\n  - vmix audio unmute input <id>\n  - vmix audio master <0-100>\n  - blender <python_script>\n  - video autocut <source_path> with instructions <text>\n  - spotify play <song_name>\n  - twitch start_stream | stop_stream\n/generate image <prompt> - Create an image from a text description\n/search <query> - Get a web-grounded answer to a query' });
-        break;
-      case '/ingest':
-        const source = args.join(' ');
-        if (!source) {
-          addMessage({ role: 'fux', content: 'Please provide a concept for the Power Module to ingest. Usage: /ingest <concept>' });
-          break;
-        }
-        setCurrentTask('Analyzing and categorizing module...');
-        try {
-          const existingNames = plugins.map(p => p.power_name);
-          const newPlugin = await categorizePlugin(source, existingNames);
-          setPlugins(prev => [...prev, { ...newPlugin, source }]);
-          addMessage({ role: 'system_core', content: `Successfully ingested Power Module: ${newPlugin.power_name} [${newPlugin.category}]`});
-        } catch(e: any) {
-          addMessage({ role: 'system_core', content: `Failed to ingest Power Module: ${e.message}` });
-        }
+        addMessage({ role: 'fux', content: 'Available Commands:\n/help - Show this message\n/agent <goal> - Engage agent mode for a complex task\n/powers - List ingested Power Modules\n/use <module_tool> [args] - Use a Power Module tool (e.g. vmix, blender, or custom tools from ingested repos)\n  Built-in examples:\n  - vmix switch input <id>\n  - blender <python_script>\n  - video autocut <source_path> with instructions <text>\n  - spotify play <song_name>\n  - twitch start_stream | stop_stream\n/generate image <prompt> - Create an image from a text description\n/search <query> - Get a web-grounded answer to a query' });
         break;
       case '/powers':
         if (plugins.length === 0) {
-          addMessage({ role: 'fux', content: 'No Power Modules have been ingested. Use /ingest <concept> to add one.' });
+          addMessage({ role: 'fux', content: 'No Power Modules have been ingested. Use the Ingest Matrix icon to add one.' });
         } else {
           const groupedByCategory = plugins.reduce((acc, plugin) => {
             if (!acc[plugin.category]) {
@@ -444,31 +630,31 @@ const App: React.FC = () => {
           let content = 'Available Power Modules:\n';
           for (const category in groupedByCategory) {
             content += `\n[${category.toUpperCase()}]\n`;
-            content += groupedByCategory[category].map(p => `- ${p.power_name}`).join('\n');
+            content += groupedByCategory[category].map(p => `- ${p.power_name} (${p.tools.length} tools)`).join('\n');
           }
           addMessage({ role: 'fux', content });
         }
         break;
       case '/use':
-        const [powerName, ...powerArgs] = args;
-        if (!powerName) {
-            addMessage({ role: 'fux', content: 'Please specify a Power Module to use. Usage: /use <power_name> <...args>' });
+        const [toolName, ...toolArgs] = args;
+        if (!toolName) {
+            addMessage({ role: 'fux', content: 'Please specify a tool to use. Usage: /use <tool_name> <...args>' });
             break;
         }
         
-        if (powerName.toLowerCase() === 'vmix') {
+        // Handle built-in tools
+        if (toolName.toLowerCase() === 'vmix') {
           setCurrentTask(`Executing vMix command...`);
           try {
-              const resultMessage = await handleVMixCommand(powerArgs);
+              const resultMessage = await handleVMixCommand(toolArgs);
               addMessage({ role: 'system_core', content: resultMessage });
           } catch (e: any) {
               addMessage({ role: 'system_core', content: `vMix command failed: ${e.message}` });
           }
           break;
         }
-        
-        if (powerName.toLowerCase() === 'blender') {
-          const script = powerArgs.join(' ');
+        if (toolName.toLowerCase() === 'blender') {
+          const script = toolArgs.join(' ');
           if (!script) {
             addMessage({ role: 'fux', content: 'Please provide a Python script to execute. Usage: /use blender <script>' });
             break;
@@ -485,11 +671,10 @@ const App: React.FC = () => {
           }
           break;
         }
-
-        if (powerName.toLowerCase() === 'video') {
+        if (toolName.toLowerCase() === 'video') {
             setCurrentTask(`Executing video command...`);
             try {
-                const result = await handleVideoCommand(powerArgs);
+                const result = await handleVideoCommand(toolArgs);
                 addMessage({ 
                   role: 'system_core', 
                   content: `Video command successful: ${result.message}`,
@@ -500,22 +685,20 @@ const App: React.FC = () => {
             }
             break;
         }
-
-        if (powerName.toLowerCase() === 'spotify') {
+        if (toolName.toLowerCase() === 'spotify') {
             setCurrentTask(`Executing Spotify command...`);
             try {
-                const resultMessage = await handleSpotifyCommand(powerArgs);
+                const resultMessage = await handleSpotifyCommand(toolArgs);
                 addMessage({ role: 'system_core', content: resultMessage });
             } catch (e: any) {
                 addMessage({ role: 'system_core', content: `Spotify command failed: ${e.message}` });
             }
             break;
         }
-
-        if (powerName.toLowerCase() === 'twitch') {
+        if (toolName.toLowerCase() === 'twitch') {
           setCurrentTask(`Executing Twitch command...`);
           try {
-              const resultMessage = await handleTwitchCommand(powerArgs);
+              const resultMessage = await handleTwitchCommand(toolArgs);
               addMessage({ role: 'system_core', content: resultMessage });
           } catch (e: any) {
               addMessage({ role: 'system_core', content: `Twitch command failed: ${e.message}` });
@@ -523,13 +706,21 @@ const App: React.FC = () => {
           break;
         }
 
+        // Handle custom tools from plugins
+        const allCustomTools = plugins.flatMap(p => p.tools.map(t => ({ ...t, plugin: p })));
+        const targetTool = allCustomTools.find(t => t.name === toolName);
 
-        setCurrentTask(`Executing Power Module: ${powerName}`);
+        if (!targetTool) {
+             addMessage({ role: 'system_core', content: `Error: Tool "${toolName}" not found. It is not a built-in tool or a function from an ingested repository.` });
+             break;
+        }
+
+        setCurrentTask(`Executing Tool: ${toolName}`);
         try {
-            const result = await executeCode(powerName, powerArgs);
-            addMessage({ role: 'system_core', content: `Execution Result from ${powerName}:\n${result}` });
+            const result = await executeCode(targetTool.plugin, toolName, toolArgs.join(' '));
+            addMessage({ role: 'system_core', content: `Execution Result from ${toolName}:\n${result}` });
         } catch (e: any) {
-            addMessage({ role: 'system_core', content: `Execution failed for ${powerName}: ${e.message}` });
+            addMessage({ role: 'system_core', content: `Execution failed for ${toolName}: ${e.message}` });
         }
         break;
       case '/generate':
@@ -583,7 +774,7 @@ const App: React.FC = () => {
         setCurrentTask(`Formulating plan for: "${goal}"`);
         addMessage({ role: 'system_core', content: `AGENT MODE: ENGAGED. Goal: ${goal}` });
         try {
-          const plan = await createExecutionPlan(goal);
+          const plan = await createExecutionPlan(goal, plugins, getCombinedCodexContent());
           addMessage({
             role: 'fux',
             content: 'Execution plan formulated. Initiating sequence.',
@@ -608,6 +799,7 @@ const App: React.FC = () => {
             
             let currentStepOutput: any = null;
             
+            // Check if it's a built-in tool first
             switch (step.tool) {
               case 'vmix':
                 const vmixCommandParts = resolvedArgs.split(/\s+/);
@@ -657,7 +849,16 @@ const App: React.FC = () => {
                 addMessage({ role: 'fux', content: resolvedArgs });
                 break;
               default:
-                throw new Error(`Unknown tool specified by agent: ${step.tool}`);
+                // If not a built-in tool, search in custom plugins
+                const allCustomTools = plugins.flatMap(p => p.tools.map(t => ({ ...t, plugin: p })));
+                const targetCustomTool = allCustomTools.find(t => t.name === step.tool);
+                if (targetCustomTool) {
+                    const customResult = await executeCode(targetCustomTool.plugin, step.tool, resolvedArgs);
+                    currentStepOutput = customResult;
+                    addMessage({ role: 'system_core', content: `Tool ${step.tool} result: ${customResult}` });
+                } else {
+                    throw new Error(`Unknown tool specified by agent: ${step.tool}`);
+                }
             }
             stepOutputs[index] = currentStepOutput;
           }
@@ -676,9 +877,16 @@ const App: React.FC = () => {
     setIsPluginRegistryOpen(false);
   }
 
-  const handleDeployPower = (powerName: string) => {
-    setInput(`/use ${powerName} <arguments>`);
+  const handleDeployPower = (toolName: string) => {
+    setInput(`/use ${toolName} `);
     setIsPowersGuideOpen(false);
+    // Find the input element and focus it
+    setTimeout(() => {
+        const inputElement = document.querySelector('textarea');
+        if (inputElement) {
+            inputElement.focus();
+        }
+    }, 0);
   }
   
   const handleToggleFavorite = (powerName: string) => {
@@ -709,6 +917,9 @@ const App: React.FC = () => {
           onToggleTts={() => setIsTtsEnabled(p => !p)}
           onToggleConnections={() => setIsConnectionsPanelOpen(p => !p)}
           onTogglePowersGuide={() => setIsPowersGuideOpen(p => !p)}
+          onToggleChatHistory={() => setIsChatHistoryOpen(p => !p)}
+          onToggleIngest={() => setIsIngestPanelOpen(p => !p)}
+          onToggleCodex={() => setIsCodexPanelOpen(p => !p)}
         />
         {error && <ErrorDisplay message={error} />}
         <main className="flex-grow min-h-0">
@@ -726,6 +937,27 @@ const App: React.FC = () => {
           />
         </main>
       </div>
+       <ChatHistoryPanel
+        isOpen={isChatHistoryOpen}
+        onClose={() => setIsChatHistoryOpen(false)}
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        onNewChat={handleCreateNewSession}
+        onSwitchChat={handleSwitchSession}
+        onDeleteChat={handleDeleteSession}
+      />
+      <IngestRepositoryPanel 
+        isOpen={isIngestPanelOpen}
+        onClose={() => setIsIngestPanelOpen(false)}
+        onIngestFile={handleIngestFile}
+      />
+      <CodexPanel
+        isOpen={isCodexPanelOpen}
+        onClose={() => setIsCodexPanelOpen(false)}
+        codexFiles={codexFiles}
+        onAddFile={handleAddCodexFile}
+        onDeleteFile={handleDeleteCodexFile}
+      />
       <PluginRegistry 
         isOpen={isPluginRegistryOpen}
         plugins={plugins}
@@ -738,7 +970,6 @@ const App: React.FC = () => {
         onClose={() => setIsConnectionsPanelOpen(false)}
       />
       <PowersGuide
-        // FIX: The `isOpen` prop for PowersGuide should be controlled by the `isPowersGuideOpen` state variable.
         isOpen={isPowersGuideOpen}
         plugins={plugins}
         onClose={() => setIsPowersGuideOpen(false)}
