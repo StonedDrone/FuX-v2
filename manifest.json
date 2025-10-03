@@ -1,0 +1,9 @@
+{
+  "short_name": "FuX",
+  "name": "FuXStiXX",
+  "description": "An interface to upload and absorb Power Modules into the FuX System-Integrated Sentinel. Upload a code file to see FuX analyze its functionality and integrate it as a new power.",
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#0f172a",
+  "background_color": "#020617"
+}

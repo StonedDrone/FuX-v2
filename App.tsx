@@ -154,10 +154,11 @@ const App: React.FC = () => {
     try {
       const storedFavorites = localStorage.getItem('fux_favorite_powers');
       if (storedFavorites) {
-        // FIX: Replaced type assertion with a type guard for robust parsing.
+        // FIX: The `every` type guard does not narrow the array type for the compiler.
+        // Adding an explicit cast to `string[]` after the check ensures type safety.
         const parsedFavorites = JSON.parse(storedFavorites);
         if (Array.isArray(parsedFavorites) && parsedFavorites.every(item => typeof item === 'string')) {
-          setFavoritePowers(new Set(parsedFavorites));
+          setFavoritePowers(new Set(parsedFavorites as string[]));
         }
       }
     } catch (e) {
@@ -196,7 +197,7 @@ const App: React.FC = () => {
     try {
         localStorage.setItem('fux_plugins', JSON.stringify(plugins));
     } catch (e) {
-        console.error("Failed to save plugins to localStorage", e);
+        console.error("Failed to save plugins from localStorage", e);
     }
   }, [plugins]);
 
