@@ -15,6 +15,7 @@ import { blenderService } from './services/blenderService';
 import { videoService } from './services/videoService';
 import { spotifyService } from './services/spotifyService';
 import { twitchService } from './services/twitchService';
+import { githubService } from './services/githubService';
 import { CodexPanel, CodexFile } from './components/CodexPanel';
 
 interface GroundingChunk {
@@ -278,6 +279,43 @@ const App: React.FC = () => {
       setCurrentTask(null);
     }
   };
+
+  const handleIngestUrls = async (urls: string[]) => {
+    setIsIngestPanelOpen(false);
+    setIsReplying(true);
+    addMessage({ role: 'system_core', content: `[BATCH INGESTION PROTOCOL] Initiated for ${urls.length} repositories.` });
+
+    for (const [index, url] of urls.entries()) {
+      const shortUrl = url.split('/').slice(-2).join('/');
+      try {
+        setCurrentTask(`[${index + 1}/${urls.length}] Fetching: ${shortUrl}`);
+        addMessage({ role: 'system_core', content: `[INGESTION] Fetching content from ${url}...` });
+
+        const { repoName, content } = await githubService.fetchRepoContents(url);
+
+        setCurrentTask(`[${index + 1}/${urls.length}] Ingesting: ${repoName}`);
+        addMessage({ role: 'system_core', content: `[INGESTION] Analyzing ${repoName}...` });
+
+        // Get current list of names before this ingestion
+        const existingNames = plugins.map(p => p.power_name);
+        const newPlugin = await ingestRepository(repoName, content, existingNames, getCombinedCodexContent());
+        
+        // Use a function for setPlugins to get the most recent state
+        setPlugins(prev => [...prev, newPlugin]);
+        addMessage({ role: 'system_core', content: `Successfully ingested and activated Power Module: ${newPlugin.power_name} [${newPlugin.category}].\n${newPlugin.tools.length} new tools available.`});
+
+      } catch (e: any) {
+        const errorMessage = e instanceof Error ? e.message : String(e);
+        setError(`Failed to ingest repository from ${url}: ${errorMessage}`);
+        addMessage({ role: 'system_core', content: `[INGESTION FAILED for ${shortUrl}] ${errorMessage}` });
+      }
+    }
+
+    addMessage({ role: 'system_core', content: `[BATCH INGESTION PROTOCOL] Completed.` });
+    setIsReplying(false);
+    setCurrentTask(null);
+  };
+
 
   const handleAddCodexFile = async (file: File) => {
     if (codexFiles.some(f => f.name === file.name)) {
@@ -950,6 +988,7 @@ const App: React.FC = () => {
         isOpen={isIngestPanelOpen}
         onClose={() => setIsIngestPanelOpen(false)}
         onIngestFile={handleIngestFile}
+        onIngestUrls={handleIngestUrls}
       />
       <CodexPanel
         isOpen={isCodexPanelOpen}

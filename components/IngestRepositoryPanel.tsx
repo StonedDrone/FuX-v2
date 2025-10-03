@@ -6,14 +6,25 @@ interface IngestRepositoryPanelProps {
   isOpen: boolean;
   onClose: () => void;
   onIngestFile: (file: File) => void;
+  onIngestUrls: (urls: string[]) => void;
 }
 
-export const IngestRepositoryPanel: React.FC<IngestRepositoryPanelProps> = ({ isOpen, onClose, onIngestFile }) => {
+export const IngestRepositoryPanel: React.FC<IngestRepositoryPanelProps> = ({ isOpen, onClose, onIngestFile, onIngestUrls }) => {
   const [file, setFile] = useState<File | null>(null);
+  const [urls, setUrls] = useState('');
 
-  const handleSubmit = () => {
+  const handleFileSubmit = () => {
     if (file) {
       onIngestFile(file);
+      setFile(null);
+    }
+  };
+
+  const handleUrlSubmit = () => {
+    if (urls.trim()) {
+      const urlArray = urls.split('\n').map(u => u.trim()).filter(Boolean);
+      onIngestUrls(urlArray);
+      setUrls('');
     }
   };
 
@@ -37,26 +48,47 @@ export const IngestRepositoryPanel: React.FC<IngestRepositoryPanelProps> = ({ is
           </button>
         </div>
         <div className="p-6 h-[calc(100%-65px)] flex flex-col">
-          <p className="text-sm text-slate-400 mb-4">
-            Upload a code repository (e.g., a <code className="bg-slate-800 px-1 rounded">.py</code> or <code className="bg-slate-800 px-1 rounded">.js</code> file) to integrate its functions as new Power Modules. FuX will analyze the code and make its capabilities available to the agent.
-          </p>
-          
-          <FileUpload onFileSelect={setFile} />
-
-          {file && (
-            <div className="mt-4 text-center p-2 bg-slate-800 rounded-md">
-              <p className="text-sm text-slate-300 font-mono truncate">{file.name}</p>
-              <p className="text-xs text-slate-500">{(file.size / 1024).toFixed(2)} KB</p>
-            </div>
-          )}
-
-          <div className="mt-auto pt-4">
+          <div className="flex-grow overflow-y-auto pr-2">
+            {/* Section 1: Single File Upload */}
+            <h3 className="text-base font-semibold text-slate-300 mb-2">Ingest Single File</h3>
+            <p className="text-sm text-slate-400 mb-4">
+              Upload a single code file to integrate its functions as a new Power Module.
+            </p>
+            <FileUpload onFileSelect={setFile} />
+            {file && (
+              <div className="mt-4 text-center p-2 bg-slate-800 rounded-md">
+                <p className="text-sm text-slate-300 font-mono truncate">{file.name}</p>
+                <p className="text-xs text-slate-500">{(file.size / 1024).toFixed(2)} KB</p>
+              </div>
+            )}
             <button
-              onClick={handleSubmit}
+              onClick={handleFileSubmit}
               disabled={!file}
-              className="w-full py-2 px-4 text-sm font-semibold rounded-md bg-cyan-600/50 text-cyan-200 hover:bg-cyan-600/80 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-colors"
+              className="w-full mt-4 py-2 px-4 text-sm font-semibold rounded-md bg-cyan-600/50 text-cyan-200 hover:bg-cyan-600/80 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-colors"
             >
-              Analyze & Ingest
+              Analyze & Ingest File
+            </button>
+
+            <div className="my-8 border-t border-slate-700"></div>
+
+            {/* Section 2: Batch URL Upload */}
+            <h3 className="text-base font-semibold text-slate-300 mb-2">Batch Ingest from GitHub</h3>
+            <p className="text-sm text-slate-400 mb-4">
+              Enter public GitHub repository URLs (one per line). FuX will fetch all supported source files and analyze them as a single module per repository.
+            </p>
+            <textarea
+              value={urls}
+              onChange={(e) => setUrls(e.target.value)}
+              placeholder="https://github.com/owner/repo1&#10;https://github.com/another-owner/repo2"
+              rows={4}
+              className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2 text-slate-200 resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all font-mono text-xs"
+            />
+            <button
+              onClick={handleUrlSubmit}
+              disabled={!urls.trim()}
+              className="w-full mt-4 py-2 px-4 text-sm font-semibold rounded-md bg-cyan-600/50 text-cyan-200 hover:bg-cyan-600/80 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed transition-colors"
+            >
+              Analyze & Ingest URLs
             </button>
           </div>
         </div>
